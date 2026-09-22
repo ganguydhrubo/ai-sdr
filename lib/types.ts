@@ -140,6 +140,8 @@ export interface Lead {
   preferred_language: 'en' | 'hi' | 'bn' | 'hinglish';
   assigned_user_id?: string;
   is_suppressed: boolean;
+  suppression_reason?: string;
+  industry?: string;
   is_dnc_registered: boolean;
   requires_human_attention: boolean;
   attention_reason?: string;
@@ -370,7 +372,7 @@ export interface TalkSession {
   lead_company?: string;
   campaign_id?: string;
   campaign_step_id?: string;
-  channel: 'email' | 'whatsapp' | 'manual';
+  channel: 'email' | 'whatsapp' | 'sms' | 'manual';
   token_hash: string;
   token?: string; // Only present upon immediate generation
   status: TalkSessionStatus;
@@ -389,8 +391,11 @@ export interface TalkSession {
 export interface TalkCallNonce {
   id: string;
   organization_id: string;
+  lead_id: string;
   talk_session_id: string;
   nonce_hash: string;
+  is_used: boolean;
+  used_at?: string;
   expires_at: string;
   consumed_at?: string;
   created_at: string;
@@ -458,6 +463,7 @@ export interface VoiceSettings {
   pstn_enabled: boolean;
   dlt_entity_id?: string;
   caller_id_series?: '140' | '1600' | '1601';
+  advance_notice_given?: boolean;
   oap_autodialer_notice_date?: string;
   oap_notice_doc_url?: string;
   calling_window_start: string;

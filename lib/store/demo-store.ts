@@ -18,6 +18,7 @@ import {
   Channel,
   AISalesBrief,
   TalkSession,
+  TalkCallNonce,
   VoiceCall,
   VoiceSettings,
 } from '../types';
@@ -325,6 +326,7 @@ class DemoStore {
   public auditLogs: AuditLog[] = [];
   public aiRuns: AIRun[] = [];
   public talkSessions: TalkSession[] = [];
+  public talkCallNonces: TalkCallNonce[] = [];
   public voiceCalls: VoiceCall[] = [];
   public voiceSettings: VoiceSettings = {
     id: 'vset_01',
@@ -806,10 +808,34 @@ class DemoStore {
     );
   }
 
+  public getLeads(): Lead[] {
+    return this.leads;
+  }
+
+  public getTalkSessions(): TalkSession[] {
+    return this.talkSessions;
+  }
+
+  public getVoiceCalls(): VoiceCall[] {
+    return this.voiceCalls;
+  }
+
+  public getVoiceSettings(): VoiceSettings {
+    return this.voiceSettings;
+  }
+
+  public getOrg(): Organization {
+    return this.org;
+  }
+
   public getTalkSession(idOrToken: string): TalkSession | undefined {
     return this.talkSessions.find(
       (ts) => ts.id === idOrToken || ts.token_hash === idOrToken || ts.token === idOrToken
     );
+  }
+
+  public createTalkSession(session: Partial<TalkSession>): TalkSession {
+    return this.addTalkSession(session);
   }
 
   public addTalkSession(session: Partial<TalkSession>): TalkSession {
@@ -874,6 +900,35 @@ class DemoStore {
   public updateVoiceSettings(updates: Partial<VoiceSettings>): VoiceSettings {
     Object.assign(this.voiceSettings, updates);
     return this.voiceSettings;
+  }
+
+  public findTalkSessionByTokenHash(tokenHash: string): TalkSession | undefined {
+    return this.talkSessions.find((ts) => ts.token_hash === tokenHash);
+  }
+
+  public createTalkNonce(nonceData: TalkCallNonce): TalkCallNonce {
+    this.talkCallNonces.unshift(nonceData);
+    return nonceData;
+  }
+
+  public findTalkNonceByHash(nonceHash: string): TalkCallNonce | undefined {
+    return this.talkCallNonces.find((n) => n.nonce_hash === nonceHash);
+  }
+
+  public consumeTalkNonceByHash(nonceHash: string): { success: boolean; nonce?: TalkCallNonce; error?: string } {
+    const nonceRecord = this.talkCallNonces.find((n) => n.nonce_hash === nonceHash);
+    if (!nonceRecord) {
+      return { success: false, error: 'Nonce not found' };
+    }
+    if (nonceRecord.is_used) {
+      return { success: false, error: 'Nonce has already been used' };
+    }
+    if (new Date(nonceRecord.expires_at).getTime() < Date.now()) {
+      return { success: false, error: 'Nonce has expired' };
+    }
+    nonceRecord.is_used = true;
+    nonceRecord.used_at = new Date().toISOString();
+    return { success: true, nonce: nonceRecord };
   }
 
 
