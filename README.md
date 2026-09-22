@@ -113,6 +113,26 @@ docker compose up -d
 ```
 Access the n8n canvas at [http://localhost:5678](http://localhost:5678).
 
+Import the workflow exports from `n8n/workflows/` (Workflows → Import from file). The voice module
+ships four: `talk-invite-dispatch`, `talk-invite-reminder`, `post-call-followup`, `talk-link-expiry`
+(regenerate with `python n8n/workflows/build_voice_workflows.py`). They only need environment
+variables in n8n: `APP_URL`, `DOGRAH_TOOL_SECRET`, `SLACK_WEBHOOK_URL`, `RESEND_API_KEY`,
+`RESEND_FROM`, `N8N_WEBHOOK_SECRET`.
+
+---
+
+## 🎙️ Voice Module ("Talk to our AI" + optional PSTN)
+
+- Zero-carrier-cost WebRTC talk links minted per lead by `TALK_INVITE` campaign steps (`{{talk_link}}`),
+  the public talk page at `/talk/[token]`, Dograh in-call tools, and the end-of-call webhook that
+  closes the loop (`/api/voice/webhooks/dograh`).
+- Optional TRAI/DPDP-gated PSTN calling through Dograh + Vobiz — enabled only when the eight-point
+  gate on `/settings/voice` passes.
+- Docs: [docs/voice/DOGRAH_SETUP.md](docs/voice/DOGRAH_SETUP.md) (runbook),
+  [docs/voice/DOGRAH_CONTRACTS.md](docs/voice/DOGRAH_CONTRACTS.md) (payloads),
+  [infra/dograh/README.md](infra/dograh/README.md) (hosting), call script at
+  `lib/voice/prompts/sdr-talk-agent.md`.
+
 ---
 
 ## 📂 Project Repository Structure
@@ -128,6 +148,9 @@ ai-sdr/
 │   ├── meetings/              # Verified Meetings & AI Sales Briefs
 │   ├── pipeline/              # Kanban CRM Pipeline
 │   ├── settings/              # Admin Control Center & ICP Matrix
+│   │   └── voice/             # Voice Settings + eight-point PSTN gate
+│   ├── talk/[token]/          # Public "Talk to our AI" page (WebRTC)
+│   ├── api/voice/             # Dograh tools, webhook, talk-invite, sessions, calls, settings
 │   ├── tasks/                 # Human Sales Handoff Tasks
 │   ├── globals.css            # Enterprise Theme & Tailwind Styles
 │   ├── layout.tsx             # Root Application Shell
@@ -142,7 +165,9 @@ ai-sdr/
 │   ├── ai/                    # Groq, Demo LLM, Prompts, Zod Schemas
 │   ├── compliance/            # ComplianceGuard, Suppression, Kill Switch
 │   ├── normalization/         # +91 Phone, GSTIN, Entity Type parsing
-│   ├── orchestrator/          # 13-Agent SDR Orchestrator State Machine
+│   ├── orchestrator/          # 13-Agent SDR Orchestrator State Machine + talk-invite dispatch
+│   ├── outreach/              # Campaign template rendering ({{first_name}}, {{talk_link}} …)
+│   ├── voice/                 # Providers (demo/Dograh), tokens, nonces, compliance gate, prompts
 │   ├── store/                 # Persistent In-Memory & Demo Store
 │   └── types.ts               # Core TypeScript definitions
 │
@@ -151,6 +176,9 @@ ai-sdr/
 │   └── seed.sql               # Indian B2B Seed Ecosystem (50+ comps, 100+ leads)
 │
 ├── docker/                     # Dockerized n8n Orchestrator
+├── n8n/workflows/              # Importable n8n exports (lead ingestion + 4 voice workflows)
+├── infra/dograh/               # Running Dograh (cloud vs self-hosted) for the voice module
+├── docs/voice/                 # Dograh setup runbook and integration contracts
 ├── tests/                      # Automated Vitest Suite
 └── package.json
 ```
