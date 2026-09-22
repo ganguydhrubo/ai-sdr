@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       start_time: selected_slot,
       end_time: new Date(new Date(selected_slot).getTime() + 15 * 60000).toISOString(),
       meet_url: meetLink,
-      calendar_provider: 'Jitsi Meet (free, no account)',
+      calendar_provider: 'Jitsi Meet',
       status: 'CONFIRMED',
       sales_brief: {
         account_overview: `Discovery demo booked directly over voice call for ${lead.company_name}.`,

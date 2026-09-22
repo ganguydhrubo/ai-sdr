@@ -99,7 +99,7 @@ export default function MeetingsPage() {
             <Calendar className="w-6 h-6 text-indigo-600" />
             Confirmed Discovery Meetings & AI Briefs
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">Free Jitsi video rooms (no account), .ics invites, and auto-synthesised AE briefing dossiers.</p>
+          <p className="text-xs text-slate-500 mt-0.5">Jitsi video rooms (no account needed), .ics invites, and auto-synthesised AE briefing dossiers.</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-xs">
@@ -276,7 +276,7 @@ export default function MeetingsPage() {
       </div>
 
       {/* Book modal */}
-      <Modal open={showBook} title="Book a discovery meeting" description="Creates a free Jitsi room, generates the AI brief and (optionally) emails the .ics invite." onClose={() => setShowBook(false)}>
+      <Modal open={showBook} title="Book a discovery meeting" description="Creates a Jitsi room, generates the AI brief and (optionally) emails the .ics invite." onClose={() => setShowBook(false)}>
         <div className="space-y-3">
           <Field label="Prospect">
             <select value={bookLeadId} onChange={(e) => setBookLeadId(e.target.value)} className={inputCls} data-testid="book-lead">

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Search, AlertOctagon, Building, Loader2 } from 'lucide-react';
+import { Search, AlertOctagon, Building, Loader2, LogOut } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { IntegrationStatus } from '../../lib/integrations/status';
 import type { User } from '../../lib/types';
@@ -14,6 +14,7 @@ interface HeaderProps {
   integrations?: IntegrationStatus;
   orgName?: string;
   user?: User;
+  onSignOut?: () => void;
 }
 
 function Chip({ ok, label, title }: { ok: boolean | undefined; label: string; title?: string }) {
@@ -35,8 +36,8 @@ function Chip({ ok, label, title }: { ok: boolean | undefined; label: string; ti
   );
 }
 
-export function Header({ onOpenCommandPalette, killSwitchActive, onToggleKillSwitch, toggling, integrations, orgName, user }: HeaderProps) {
-  const initials = (user?.full_name || 'Ananya Sen')
+export function Header({ onOpenCommandPalette, killSwitchActive, onToggleKillSwitch, toggling, integrations, orgName, user, onSignOut }: HeaderProps) {
+  const initials = (user?.full_name || 'Operator')
     .split(' ')
     .map((p) => p[0])
     .join('')
@@ -47,10 +48,10 @@ export function Header({ onOpenCommandPalette, killSwitchActive, onToggleKillSwi
     ? integrations.demo_mode
       ? 'DEMO MODE · all simulated'
       : integrations.delivery_mode === 'SIMULATED'
-        ? 'FREE STACK · delivery simulated'
+        ? 'DELIVERY · SIMULATED'
         : integrations.delivery_mode === 'LIVE_REDIRECT'
-          ? 'FREE STACK · live, redirected to test inbox'
-          : 'FREE STACK · LIVE delivery'
+          ? 'DELIVERY · LIVE, REDIRECTED TO TEST INBOX'
+          : 'DELIVERY · LIVE'
     : 'Connecting…';
 
   return (
@@ -131,9 +132,19 @@ export function Header({ onOpenCommandPalette, killSwitchActive, onToggleKillSwi
             {initials}
           </div>
           <div className="text-left hidden md:block">
-            <div className="text-xs font-semibold text-slate-800">{user?.full_name || 'Ananya Sen'}</div>
-            <div className="text-[10px] text-slate-500">{user ? user.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : 'Sales Manager'}</div>
+            <div className="text-xs font-semibold text-slate-800">{user?.full_name || 'Operator'}</div>
+            <div className="text-[10px] text-slate-500">{user ? user.role.replace('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : ''}</div>
           </div>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              title="Sign out"
+              className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              data-testid="sign-out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </header>

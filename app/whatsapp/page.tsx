@@ -41,8 +41,8 @@ export default function WhatsAppHubPage() {
 
   // Live Test Outbound Sandbox State
   const [testPhone, setTestPhone] = useState('+91 98765 43210');
-  const [testName, setTestName] = useState('Rajesh Sharma');
-  const [testCompany, setTestCompany] = useState('Bharat Forgings Ltd');
+  const [testName, setTestName] = useState('');
+  const [testCompany, setTestCompany] = useState('');
   const [testBaseMessage, setTestBaseMessage] = useState(
     'Saw your team expanding B2B manufacturing in Pune. Would love to share a short case study on sales automation.'
   );
@@ -202,8 +202,8 @@ export default function WhatsAppHubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prospectMessage: prospectInboundMessage,
-          prospectName: 'Rajesh Sharma',
-          prospectCompany: 'Bharat Forgings Ltd',
+          prospectName: testName,
+          prospectCompany: testCompany,
         }),
       });
       const json = await res.json();
@@ -583,7 +583,7 @@ export default function WhatsAppHubPage() {
               Autonomous AI Brain: Inbound Conversation Intelligence
             </h2>
             <p className="text-xs text-slate-500">
-              When an Indian prospect sends a WhatsApp message, the AI brain (Groq GPT-OSS on the free tier, or the offline simulator) classifies objections, queries sales playbooks, and replies consultatively.
+              When a prospect sends a WhatsApp message, the AI brain (Groq GPT-OSS, or the offline simulator) classifies objections, queries sales playbooks, and replies consultatively.
             </p>
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">

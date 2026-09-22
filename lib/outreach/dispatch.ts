@@ -184,14 +184,14 @@ export async function dispatchOutboundMessage(messageId: string): Promise<Dispat
 }
 
 /** Human approval → immediate dispatch through the channel provider. */
-export async function approveAndDispatch(messageId: string, approver = 'Ananya Sen (Sales Manager)'): Promise<DispatchResult> {
+export async function approveAndDispatch(messageId: string, approver?: string): Promise<DispatchResult> {
   const store = getDemoStore();
   const message = store.messages.find((m) => m.id === messageId);
   if (!message) throw new Error(`Message not found: ${messageId}`);
   if (message.status !== 'PENDING_APPROVAL' && message.status !== 'FAILED' && message.status !== 'QUEUED') {
     throw new Error(`Message ${messageId} is ${message.status}; only pending, queued or failed messages can be approved`);
   }
-  message.approved_by = approver;
+  message.approved_by = approver || store.users[0]?.full_name || 'Operator';
   message.approved_at = new Date().toISOString();
   message.status = 'QUEUED';
   store.recordAuditLog('USER', 'OUTREACH_APPROVED', 'message', message.id, `${approver} approved ${message.channel} outbound to ${message.lead_name}`);

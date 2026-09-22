@@ -734,7 +734,7 @@ export default function LeadDetailPage() {
       )}
 
       {/* Book meeting modal */}
-      <Modal open={showBook} title={`Book a discovery meeting with ${lead.first_name}`} description="Free Jitsi room, .ics invite, and an AI sales brief for the AE." onClose={() => setShowBook(false)}>
+      <Modal open={showBook} title={`Book a discovery meeting with ${lead.first_name}`} description="Jitsi room, .ics invite, and an AI sales brief for the AE." onClose={() => setShowBook(false)}>
         <div className="space-y-3">
           <Field label="Slot (IST business hours)">
             <select value={slot} onChange={(e) => setSlot(e.target.value)} className={inputCls} data-testid="meeting-slot">

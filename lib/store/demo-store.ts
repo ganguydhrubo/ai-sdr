@@ -102,38 +102,11 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'usr_01',
     organization_id: DEFAULT_ORG.id,
-    email: 'vikram.malhotra@apextech.in',
-    full_name: 'Vikram Malhotra',
-    role: 'ADMIN',
-    is_active: true,
-    daily_send_limit: 250,
-  },
-  {
-    id: 'usr_02',
-    organization_id: DEFAULT_ORG.id,
-    email: 'ananya.sen@apextech.in',
-    full_name: 'Ananya Sen',
+    email: 'chetan@1xl.com',
+    full_name: 'Chetan',
     role: 'SALES_MANAGER',
     is_active: true,
-    daily_send_limit: 200,
-  },
-  {
-    id: 'usr_03',
-    organization_id: DEFAULT_ORG.id,
-    email: 'rohit.verma@apextech.in',
-    full_name: 'Rohit Verma',
-    role: 'SDR',
-    is_active: true,
-    daily_send_limit: 150,
-  },
-  {
-    id: 'usr_04',
-    organization_id: DEFAULT_ORG.id,
-    email: 'priya.iyer@apextech.in',
-    full_name: 'Priya Iyer',
-    role: 'SALES_REP',
-    is_active: true,
-    daily_send_limit: 150,
+    daily_send_limit: 250,
   },
 ];
 
@@ -169,8 +142,54 @@ export const DEFAULT_ICP: ICPConfig = {
   minimum_qualifying_score: 70,
 };
 
-// Helper generator for Indian realistic sample companies
-function generateIndianCompanies(): Company[] {
+/** True under the test runner — gates the rich fictional fixtures used only by the test suite. */
+function isTestEnv(): boolean {
+  return !!process.env.VITEST || process.env.NODE_ENV === 'test';
+}
+
+// Fictional users/companies/leads/campaigns below this line exist ONLY to give the test suite
+// rich, varied fixtures; they are never seeded in a real deployment (see isTestEnv() gating in
+// the DemoStore constructor). Production starts from generateInitialLeads() below instead.
+const TEST_USERS: User[] = [
+  {
+    id: 'usr_01',
+    organization_id: DEFAULT_ORG.id,
+    email: 'vikram.malhotra@apextech.in',
+    full_name: 'Vikram Malhotra',
+    role: 'ADMIN',
+    is_active: true,
+    daily_send_limit: 250,
+  },
+  {
+    id: 'usr_02',
+    organization_id: DEFAULT_ORG.id,
+    email: 'ananya.sen@apextech.in',
+    full_name: 'Ananya Sen',
+    role: 'SALES_MANAGER',
+    is_active: true,
+    daily_send_limit: 200,
+  },
+  {
+    id: 'usr_03',
+    organization_id: DEFAULT_ORG.id,
+    email: 'rohit.verma@apextech.in',
+    full_name: 'Rohit Verma',
+    role: 'SDR',
+    is_active: true,
+    daily_send_limit: 150,
+  },
+  {
+    id: 'usr_04',
+    organization_id: DEFAULT_ORG.id,
+    email: 'priya.iyer@apextech.in',
+    full_name: 'Priya Iyer',
+    role: 'SALES_REP',
+    is_active: true,
+    daily_send_limit: 150,
+  },
+];
+
+function generateFictionalTestCompanies(): Company[] {
   const seedList = [
     { name: 'Bharat Forgings & Precision Ltd', type: 'LTD', ind: 'Industrial Manufacturing', city: 'Pune', state: 'Maharashtra', rev: 450, empMin: 800, empMax: 1500, gstin: '27AAACB2345B1Z1' },
     { name: 'QuickLogix Supply Solutions Pvt Ltd', type: 'PVT_LTD', ind: 'Logistics & Supply Chain', city: 'Gurugram', state: 'Haryana', rev: 180, empMin: 300, empMax: 600, gstin: '06AAACQ4567Q1Z8' },
@@ -206,8 +225,7 @@ function generateIndianCompanies(): Company[] {
   }));
 }
 
-// Helper generator for Indian realistic leads
-function generateIndianLeads(companies: Company[]): Lead[] {
+function generateFictionalTestLeads(companies: Company[]): Lead[] {
   const indianNames = [
     { first: 'Rajesh', last: 'Sharma', role: 'VP Sales & BD', lang: 'en' },
     { first: 'Amitabh', last: 'Chakraborty', role: 'Chief Operating Officer', lang: 'hinglish' },
@@ -266,7 +284,7 @@ function generateIndianLeads(companies: Company[]): Lead[] {
       lead_source: idx % 2 === 0 ? 'CSV_IMPORT' : 'WEBHOOK_ENQUIRY',
       campaign_name: 'Indian Manufacturing & Tech Sales Leaders',
       preferred_language: n.lang as any,
-      assigned_user_id: INITIAL_USERS[2].id,
+      assigned_user_id: TEST_USERS[2].id,
       is_suppressed: false,
       is_dnc_registered: false,
       requires_human_attention: status === 'SALES_HANDOFF' || status === 'ENGAGED',
@@ -296,8 +314,7 @@ function generateIndianLeads(companies: Company[]): Lead[] {
   return leads;
 }
 
-// Default Campaigns
-export const INITIAL_CAMPAIGNS: Campaign[] = [
+const FICTIONAL_TEST_CAMPAIGNS: Campaign[] = [
   {
     id: 'camp_01',
     organization_id: DEFAULT_ORG.id,
@@ -363,6 +380,45 @@ export const INITIAL_CAMPAIGNS: Campaign[] = [
   },
 ];
 
+// No sample companies or campaigns — this deployment starts empty and only holds real accounts.
+function generateIndianCompanies(): Company[] {
+  return [];
+}
+
+// The single real lead this deployment starts with.
+function generateInitialLeads(): Lead[] {
+  const email = 'vapidemo2@gmail.com';
+  const rawPhone = '+918240801921';
+  const normPhone = normalizeIndianPhone(rawPhone);
+  const normEmail = normalizeEmail(email);
+
+  return [
+    {
+      id: 'lead_001',
+      organization_id: DEFAULT_ORG.id,
+      first_name: 'Hamza',
+      last_name: 'Ali Mazari',
+      full_name: 'Hamza Ali Mazari',
+      email,
+      normalized_email: normEmail.normalized,
+      phone: normPhone.isValid ? normPhone.normalized : rawPhone,
+      normalized_phone: normPhone.isValid ? normPhone.normalized : rawPhone,
+      status: 'NEW',
+      lead_source: 'MANUAL_ENTRY',
+      preferred_language: 'en',
+      assigned_user_id: INITIAL_USERS[0].id,
+      is_suppressed: false,
+      is_dnc_registered: false,
+      requires_human_attention: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+}
+
+// No sample campaigns — create real ones from the Campaigns page.
+export const INITIAL_CAMPAIGNS: Campaign[] = [];
+
 // In-Memory Global Store Instance
 class DemoStore {
   public org: Organization = DEFAULT_ORG;
@@ -410,9 +466,16 @@ class DemoStore {
       return;
     }
     this.org = { ...DEFAULT_ORG };
-    this.leads = generateIndianLeads(this.companies);
-    this.seedInitialOutboundAndConversations();
-    this.seedInitialVoiceModule();
+    if (isTestEnv()) {
+      this.users = [...TEST_USERS];
+      this.companies = generateFictionalTestCompanies();
+      this.leads = generateFictionalTestLeads(this.companies);
+      this.campaigns = [...FICTIONAL_TEST_CAMPAIGNS];
+      this.seedFictionalTestOutboundAndConversations();
+      this.seedFictionalTestVoiceModule();
+    } else {
+      this.leads = generateInitialLeads();
+    }
     ComplianceGuard.resetToDefaults();
     this.persist();
   }
@@ -449,7 +512,7 @@ class DemoStore {
     this.org = { ...DEFAULT_ORG, ...snap.org };
     this.users = snap.users?.length ? snap.users : [...INITIAL_USERS];
     this.icp = { ...DEFAULT_ICP, ...snap.icp };
-    this.companies = snap.companies?.length ? snap.companies : generateIndianCompanies();
+    this.companies = snap.companies || [];
     this.leads = snap.leads || [];
     this.campaigns = snap.campaigns || [];
     this.campaignSteps = snap.campaignSteps || [];
@@ -478,7 +541,9 @@ class DemoStore {
     flushWrite();
   }
 
-  private seedInitialOutboundAndConversations() {
+
+
+  private seedFictionalTestOutboundAndConversations() {
     // Seed Outbound Messages pending approval
     this.messages.push({
       id: 'msg_001',
@@ -572,8 +637,8 @@ class DemoStore {
       lead_id: this.leads[1].id,
       lead_name: this.leads[1].full_name,
       lead_company: this.leads[1].company_name || 'QuickLogix',
-      host_user_id: INITIAL_USERS[3].id,
-      host_user_name: INITIAL_USERS[3].full_name,
+      host_user_id: TEST_USERS[3].id,
+      host_user_name: TEST_USERS[3].full_name,
       title: 'Discovery Call: Apex SDR x QuickLogix Sales Automation',
       description: 'Discovery session on cold-chain logistics lead qualification and multi-channel WhatsApp outreach.',
       start_time: new Date(Date.now() + 86400000 * 1.5).toISOString(),
@@ -612,8 +677,8 @@ class DemoStore {
       organization_id: this.org.id,
       lead_id: this.leads[1].id,
       lead_name: this.leads[1].full_name,
-      assigned_user_id: INITIAL_USERS[3].id,
-      assigned_user_name: INITIAL_USERS[3].full_name,
+      assigned_user_id: TEST_USERS[3].id,
+      assigned_user_name: TEST_USERS[3].full_name,
       title: 'Prepare Custom Deck for QuickLogix COO Discovery Meeting',
       description: 'Review AI Sales Brief, include cold-chain logistics benchmark numbers, and verify Google Meet link.',
       priority: 'HIGH',
@@ -695,7 +760,7 @@ class DemoStore {
     );
   }
 
-  private seedInitialVoiceModule() {
+  private seedFictionalTestVoiceModule() {
     // 10 Demo Talk Sessions
     const statuses: Array<{ id: string; leadIdx: number; status: any; channel: any; expiresOffsetDays: number; sentOffsetH?: number; openedOffsetH?: number; revokedReason?: string }> = [
       { id: 'ts_01', leadIdx: 0, status: 'CREATED', channel: 'email', expiresOffsetDays: 7 },
@@ -1098,7 +1163,7 @@ class DemoStore {
       status: 'NEW',
       lead_source: leadData.lead_source || 'MANUAL_ENTRY',
       preferred_language: leadData.preferred_language || 'en',
-      assigned_user_id: leadData.assigned_user_id || INITIAL_USERS[2].id,
+      assigned_user_id: leadData.assigned_user_id || INITIAL_USERS[0].id,
       is_suppressed: false,
       is_dnc_registered: false,
       requires_human_attention: false,
@@ -1149,7 +1214,7 @@ class DemoStore {
     const msg = this.messages.find((m) => m.id === messageId);
     if (msg) {
       msg.status = 'SENT';
-      msg.approved_by = INITIAL_USERS[1].full_name;
+      msg.approved_by = INITIAL_USERS[0].full_name;
       msg.approved_at = new Date().toISOString();
       msg.sent_at = new Date().toISOString();
 
@@ -1250,7 +1315,7 @@ class DemoStore {
       start_time: start,
       end_time: meeting.end_time || new Date(new Date(start).getTime() + 30 * 60000).toISOString(),
       meet_url: meeting.meet_url || '',
-      calendar_provider: meeting.calendar_provider || 'Jitsi Meet (free, no account)',
+      calendar_provider: meeting.calendar_provider || 'Jitsi Meet',
       status: meeting.status || 'CONFIRMED',
       sales_brief: meeting.sales_brief,
       talk_session_id: meeting.talk_session_id,
@@ -1322,7 +1387,7 @@ class DemoStore {
     this.auditLogs.unshift({
       id: `aud_${Date.now()}_${Math.random().toString(36).substring(7)}`,
       organization_id: this.org.id,
-      actor_name: actorType === 'USER' ? 'Ananya Sen (Sales Manager)' : 'Apex AI SDR Agent',
+      actor_name: actorType === 'USER' ? this.users[0]?.full_name || 'Operator' : 'Apex AI SDR Agent',
       actor_type: actorType,
       action,
       entity_type: entityType,

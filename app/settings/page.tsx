@@ -160,7 +160,7 @@ export default function SettingsPage() {
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Mail className="w-4 h-4 text-indigo-600" /> Delivery mode & test recipients
             </h2>
-            <p className="text-xs text-slate-500">How approved messages leave the platform. Free tiers: Resend delivers only to your own inbox until a domain is verified; WhatsApp needs a linked number.</p>
+            <p className="text-xs text-slate-500">How approved messages leave the platform. Resend delivers only to your own inbox until a domain is verified; WhatsApp needs a linked number.</p>
           </div>
           <button onClick={handleSaveDelivery} disabled={busy !== null} className={btn.primary} data-testid="save-delivery">
             {busy === 'delivery' ? <Spinner /> : <Save className="w-3.5 h-3.5" />} Save
@@ -184,7 +184,7 @@ export default function SettingsPage() {
           ))}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Field label="Test email (LIVE_REDIRECT)" hint="Your own Resend account email works on the free tier">
+          <Field label="Test email (LIVE_REDIRECT)" hint="Your own Resend account email works until a domain is verified">
             <input value={delivery.outbound_test_email} onChange={(e) => setDelivery({ ...delivery, outbound_test_email: e.target.value })} placeholder="you@example.com" className={inputCls} />
           </Field>
           <Field label="Test WhatsApp number (LIVE_REDIRECT)" hint="Indian mobile, e.g. 9876543210">
@@ -297,7 +297,7 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Key className="w-4 h-4 text-indigo-600" />
-            Free-stack integrations — live health
+            Integrations — live health
           </h2>
           <button onClick={handleRefreshIntegrations} disabled={busy !== null} className={btn.secondary}>
             {busy === 'integrations' ? <Spinner /> : <RefreshCw className="w-3.5 h-3.5" />} Re-check

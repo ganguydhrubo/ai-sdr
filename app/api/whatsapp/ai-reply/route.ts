@@ -20,9 +20,9 @@ export async function POST(request: Request) {
     const store = getDemoStore();
     const lead = store.leads.find((l) => l.full_name === prospectName);
     const ai = getTrackedAI('WhatsAppBrainAgent', lead?.id);
-    const first = String(prospectName || 'Rajesh Sharma').split(' ')[0];
-    const prompt = `You are an enterprise AI SDR for Indian B2B sales automation (${store.org.name}).
-A prospect (${prospectName || 'Rajesh Sharma'}, VP Sales at ${prospectCompany || 'Bharat Forgings Ltd'}) just sent this WhatsApp message to your business number:
+    const first = String(prospectName || 'the prospect').split(' ')[0];
+    const prompt = `You are an enterprise AI SDR for B2B sales automation (${store.org.name}).
+A prospect (${prospectName || 'the prospect'}${prospectCompany ? `, at ${prospectCompany}` : ''}) just sent this WhatsApp message to your business number:
 "${prospectMessage}"
 The prospect's first name is ${first}.
 

@@ -111,7 +111,7 @@ export default function VoiceHubPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-full bg-violet-500/10 text-violet-700 border border-violet-500/20 text-xs font-bold uppercase tracking-wider">Free in-browser voice agent</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-violet-500/10 text-violet-700 border border-violet-500/20 text-xs font-bold uppercase tracking-wider">In-browser voice agent</span>
             <span className={clsx('flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border', callingWindow.allowed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
               <Clock className="w-3 h-3" />
               <span>

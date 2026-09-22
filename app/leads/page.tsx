@@ -320,7 +320,7 @@ export default function LeadsPage() {
       <Modal open={showModal} title="Ingest Indian B2B Lead" description="Phone is normalised to +91; duplicates by email or phone are rejected." onClose={() => setShowModal(false)}>
         <form onSubmit={handleManualSubmit} className="space-y-3" data-testid="add-lead-form">
           <Field label="Prospect Full Name *">
-            <input type="text" required placeholder="e.g. Vikram Malhotra" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={inputCls} />
+            <input type="text" required placeholder="e.g. Jane Doe" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={inputCls} />
           </Field>
           <Field label="Company Name *">
             <input type="text" required placeholder="e.g. Bharat Precision Tools Pvt Ltd" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} className={inputCls} />

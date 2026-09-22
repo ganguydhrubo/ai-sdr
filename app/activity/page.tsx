@@ -61,7 +61,7 @@ export default function ActivityCenterPage() {
             <Clock className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-bold text-slate-900">{stats.aiAvgLatencyMs} ms</div>
-          <div className="text-[11px] text-emerald-600 font-medium mt-1">{integrations.ai.live ? 'Groq LPU free tier' : 'Offline simulator'}</div>
+          <div className="text-[11px] text-emerald-600 font-medium mt-1">{integrations.ai.live ? 'Groq LPU' : 'Offline simulator'}</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -71,7 +71,7 @@ export default function ActivityCenterPage() {
           </div>
           <div className="text-2xl font-bold text-slate-900">{formatInr(spentInr, { decimals: 2 })}</div>
           <div className="text-[11px] text-slate-500 mt-1">
-            ${org.ai_budget_spent_current_month.toFixed(4)} of ${org.monthly_ai_budget} ({percentSpent}%) · billed ₹0 on the free tier
+            ${org.ai_budget_spent_current_month.toFixed(4)} of ${org.monthly_ai_budget} ({percentSpent}%) tracked this month
           </div>
         </div>
 

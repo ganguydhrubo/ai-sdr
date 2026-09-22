@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const handoffId = `hnd_${Date.now()}`;
-    const assignedRep = INITIAL_USERS[0].full_name; // Vikram Malhotra (Sales Director)
+    const assignedRep = INITIAL_USERS[0].full_name;
 
     const newTask: Task = {
       id: `task_${Date.now()}`,

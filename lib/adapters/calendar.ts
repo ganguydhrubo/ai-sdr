@@ -75,7 +75,7 @@ export function createMeetingRoomUrl(seed: string): string {
  * provider. The same slots are read aloud by the voice agent.
  */
 export class DemoCalendarProvider implements CalendarProvider {
-  public name = 'Jitsi Meet (free, no account)';
+  public name = 'Jitsi Meet';
 
   public async getAvailableSlots(startDate: Date, daysAhead = 3): Promise<TimeSlot[]> {
     const slots: TimeSlot[] = [];

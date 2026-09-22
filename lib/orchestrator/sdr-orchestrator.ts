@@ -455,14 +455,14 @@ Allowed next actions: SEND_CALENDAR_LINK, SEND_PRICING_OVERVIEW, ANSWER_TECHNICA
       };
 
       // Trigger Sales Handoff Task
-      const rep = store.users.find((u) => u.role === 'SALES_REP') || store.users[3];
+      const rep = store.users.find((u) => u.role === 'SALES_REP') || store.users[0];
       store.tasks.unshift({
         id: `task_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         organization_id: store.org.id,
         lead_id: lead.id,
         lead_name: lead.full_name,
         assigned_user_id: rep?.id,
-        assigned_user_name: rep ? `${rep.full_name} (Sales Rep)` : 'Priya Iyer (Sales Rep)',
+        assigned_user_name: rep ? rep.full_name : 'Operator',
         title: `Sales Handoff: Engage ${lead.full_name} (${lead.company_name})`,
         description: `Prospect replied: "${params.messageText}". Intent: ${intent}. Action: Book discovery call.`,
         priority: 'URGENT',

@@ -121,7 +121,7 @@ export function Sidebar({ org, stats }: { org?: Organization; stats?: AppStats }
               <ShieldCheck className={clsx('w-3 h-3', org?.emergency_kill_switch_active ? 'text-rose-400' : 'text-emerald-400')} />
               {org?.emergency_kill_switch_active ? 'Outreach halted' : 'Guardrails active'}
             </span>
-            <span className="text-emerald-400 font-medium">Free tier · ₹0 billed</span>
+            <span className="text-emerald-400 font-medium">Within monthly budget</span>
           </div>
         </div>
       </div>
