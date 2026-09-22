@@ -18,19 +18,25 @@ import {
   ArrowRight,
   ShieldAlert,
   Zap,
+  Phone,
+  Link2,
+  IndianRupee,
 } from 'lucide-react';
 import { getDemoStore } from '../lib/store/demo-store';
 import { OutboundMessage } from '../lib/types';
+import { computeVoiceAnalytics, formatDuration } from '../lib/voice/analytics';
 
 export default function DashboardPage() {
   const store = getDemoStore();
   const [messages, setMessages] = useState<OutboundMessage[]>([...store.messages]);
   const [stats, setStats] = useState(store.getStats());
+  const [voice, setVoice] = useState(() => computeVoiceAnalytics());
 
   const handleApprove = (msgId: string) => {
     store.approveMessage(msgId);
     setMessages([...store.messages]);
     setStats(store.getStats());
+    setVoice(computeVoiceAnalytics());
   };
 
   const handleReject = (msgId: string) => {
@@ -146,6 +152,68 @@ export default function DashboardPage() {
           </div>
           <div className="text-2xl font-bold text-emerald-600">{stats.meetings}</div>
           <div className="text-[11px] text-slate-500 mt-1">{stats.conversionRate}% Conversion</div>
+        </div>
+      </div>
+
+      {/* Voice module row */}
+      <div className="space-y-2" data-testid="voice-analytics">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <Phone className="w-3.5 h-3.5 text-violet-500" /> Voice — talk links & AI calls
+          </h2>
+          <Link href="/settings/voice" className="text-[11px] font-semibold text-indigo-600 hover:underline">
+            Voice settings →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-links">
+            <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+              <span>Talk Links Sent</span>
+              <Link2 className="w-4 h-4 text-violet-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900">{voice.talk_links_sent}</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {voice.talk_links_opened} opened · {voice.open_rate_pct}% open rate
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-calls">
+            <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+              <span>AI Calls</span>
+              <Phone className="w-4 h-4 text-violet-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900">{voice.calls_completed}</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              of {voice.calls_started} started · {voice.completion_rate_pct}% completed
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-duration">
+            <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+              <span>Avg Call Duration</span>
+              <Clock className="w-4 h-4 text-violet-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900">{formatDuration(voice.avg_duration_seconds)}</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {voice.webrtc_calls} WebRTC · {voice.pstn_calls} PSTN
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-meetings">
+            <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+              <span>Meetings from Voice</span>
+              <Calendar className="w-4 h-4 text-emerald-500" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-600">{voice.meetings_from_voice}</div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {voice.handoffs_from_voice} handoffs · {voice.opt_outs_from_voice} opt-outs
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-cost">
+            <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+              <span>Carrier Cost</span>
+              <IndianRupee className="w-4 h-4 text-amber-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900">₹{voice.carrier_cost_inr.toLocaleString('en-IN')}</div>
+            <div className="text-[11px] text-slate-500 mt-1">WebRTC calls cost ₹0 · PSTN est. only</div>
+          </div>
         </div>
       </div>
 
