@@ -18,12 +18,14 @@ import {
 } from 'lucide-react';
 import { getDemoStore } from '../../lib/store/demo-store';
 import { Campaign, ApprovalMode } from '../../lib/types';
+import { TEMPLATE_VARIABLES } from '../../lib/outreach/templates';
 import { clsx } from 'clsx';
 
 export default function CampaignsPage() {
   const store = getDemoStore();
   const [campaigns, setCampaigns] = useState<Campaign[]>([...store.campaigns]);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign>(campaigns[0]);
+  const steps = store.getCampaignSteps(selectedCampaign.id);
 
   const handleToggleMode = (campId: string, newMode: ApprovalMode) => {
     const camp = store.campaigns.find((c) => c.id === campId);
@@ -134,82 +136,87 @@ export default function CampaignsPage() {
 
           {/* Sequence Steps Timeline */}
           <div className="space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Outreach Cadence Steps
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Outreach Cadence Steps
+              </h3>
+              <span className="text-[11px] text-slate-400">
+                {steps.length} steps · {steps.filter((s) => s.step_type === 'TALK_INVITE').length} talk link
+              </span>
+            </div>
 
             <div className="space-y-3">
-              {/* Step 1 */}
-              <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                  1
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-indigo-600" /> Day 0 · Initial Personalized Email
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Auto-personalized by AI</span>
+              {steps.map((step) => {
+                const isTalkInvite = step.step_type === 'TALK_INVITE';
+                const Icon =
+                  isTalkInvite ? Phone : step.channel === 'WHATSAPP' ? MessageSquare : step.channel === 'LINKEDIN' ? Linkedin : Mail;
+                const iconColour =
+                  isTalkInvite
+                    ? 'text-violet-600'
+                    : step.channel === 'WHATSAPP'
+                      ? 'text-emerald-600'
+                      : step.channel === 'LINKEDIN'
+                        ? 'text-sky-600'
+                        : 'text-indigo-600';
+                return (
+                  <div
+                    key={step.id}
+                    data-testid={`campaign-step-${step.step_number}`}
+                    className={clsx(
+                      'flex items-start gap-4 p-4 rounded-lg border',
+                      isTalkInvite ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-200'
+                    )}
+                  >
+                    <div
+                      className={clsx(
+                        'w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0',
+                        isTalkInvite ? 'bg-violet-100 text-violet-700' : 'bg-indigo-100 text-indigo-700'
+                      )}
+                    >
+                      {step.step_number}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <Icon className={clsx('w-3.5 h-3.5', iconColour)} /> Day {step.delay_days} · {step.name}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-medium flex items-center gap-2">
+                          {isTalkInvite ? (
+                            <>
+                              <span className="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-mono text-[10px]">
+                                TALK_INVITE · {'{{talk_link}}'}
+                              </span>
+                              <span>
+                                {step.talk_link_expires_in_days ?? 7}-day link · {step.talk_link_max_calls ?? 3} calls · ₹0 carrier cost
+                              </span>
+                            </>
+                          ) : (
+                            <span>{step.channel} · {step.whatsapp_template_name ? `template ${step.whatsapp_template_name}` : 'AI-personalised'}</span>
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">{step.description}</p>
+                      {step.subject_template && (
+                        <p className="text-[11px] text-slate-500 mt-1.5 font-mono truncate">
+                          Subject: {step.subject_template}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Value-driven consultative intro highlighting pipeline efficiency for VP Sales. Checked against ComplianceGuard.
-                  </p>
-                </div>
-              </div>
+                );
+              })}
+            </div>
 
-              {/* Step 2 */}
-              <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                  2
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600" /> Day 2 · WhatsApp Touchpoint (Meta API)
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">+91 Verified</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Short message referencing the email with Hindi/Hinglish language options for tier-2 industrial decision makers.
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 3 */}
-              <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                  3
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-indigo-600" /> Day 5 · Value & Peer Benchmark
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Delay: 3 Days</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Shares real Indian enterprise case study on reducing SDR ramp time.
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 4 */}
-              <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                  4
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-indigo-600" /> Day 14 · Polite Breakup & Resource
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Final Cadence Step</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Polite breakup note ensuring zero spam escalation. Leaves door open for future outreach.
-                  </p>
-                </div>
-              </div>
+            <div className="rounded-lg border border-dashed border-slate-200 p-3 text-[11px] text-slate-500">
+              <span className="font-semibold text-slate-700">Template variables:</span>{' '}
+              {TEMPLATE_VARIABLES.map((v) => (
+                <span key={v.key} className="inline-block mr-2 mb-1 font-mono bg-white border border-slate-200 rounded px-1.5 py-0.5" title={v.description}>
+                  {'{{'}{v.key}{'}}'}
+                </span>
+              ))}
+              <span className="block mt-1">
+                A TALK_INVITE step mints a personal WebRTC link per lead, sends it on the step&apos;s channel and revokes it on opt-out. It must contain {'{{talk_link}}'}.
+              </span>
             </div>
           </div>
         </div>

@@ -208,16 +208,30 @@ export interface Campaign {
   created_at: string;
 }
 
+/**
+ * MESSAGE      — a templated email / WhatsApp / LinkedIn touch.
+ * TALK_INVITE  — mints a personal "Talk to our AI" link for the lead and sends it over the
+ *                step's channel; the template must contain {{talk_link}}.
+ */
+export type CampaignStepType = 'MESSAGE' | 'TALK_INVITE';
+
 export interface CampaignStep {
   id: string;
   campaign_id: string;
   step_number: number;
+  step_type?: CampaignStepType; // defaults to MESSAGE
+  name?: string;
+  description?: string;
   channel: Channel;
   delay_days: number;
   subject_template?: string;
   body_template: string;
   whatsapp_template_name?: string;
   is_active: boolean;
+  /** TALK_INVITE only — overrides for the minted talk link (fall back to VoiceSettings). */
+  talk_link_language?: string;
+  talk_link_expires_in_days?: number;
+  talk_link_max_calls?: number;
 }
 
 export interface OutboundMessage {
@@ -229,6 +243,8 @@ export interface OutboundMessage {
   campaign_id?: string;
   campaign_name?: string;
   campaign_step_id?: string;
+  /** Set when the message carries a "Talk to our AI" link (TALK_INVITE step). */
+  talk_session_id?: string;
   channel: Channel;
   direction: 'OUTBOUND' | 'INBOUND';
   subject?: string;

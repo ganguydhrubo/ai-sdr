@@ -2,7 +2,9 @@ import { getDemoStore } from '../store/demo-store';
 import { getAIProvider } from '../ai/groq';
 import { ComplianceGuard } from '../compliance/guard';
 import { LeadScoreSchema, ConversationIntentSchema, PersonalizedOutreachSchema, AISalesBriefSchema } from '../ai/schemas';
-import { Lead, OutboundMessage, Conversation, Channel, ConversationIntent } from '../types';
+import { Lead, OutboundMessage, Conversation, Channel, ConversationIntent, CampaignStep } from '../types';
+import { dispatchTalkInvite } from './talk-invite';
+import { renderTemplate, leadTemplateVariables } from '../outreach/templates';
 
 export class SDROrchestrator {
   /**
@@ -170,6 +172,89 @@ Rules: Do NOT fabricate unverified news. Keep concise and professional. Include 
       message: newMsg,
       stepsTaken,
     };
+  }
+
+  /**
+   * Executes one campaign sequence step for a lead.
+   * MESSAGE steps render the step templates into an outbound message (guarded, approval-aware);
+   * TALK_INVITE steps mint a personal "Talk to our AI" link and send it via dispatchTalkInvite().
+   */
+  public static async executeCampaignStep(
+    leadId: string,
+    stepId: string
+  ): Promise<{ success: boolean; stepType: CampaignStep['step_type']; message?: OutboundMessage; error?: string }> {
+    const store = getDemoStore();
+    const step = store.getCampaignStep(stepId);
+    if (!step) {
+      return { success: false, stepType: undefined, error: `Campaign step not found: ${stepId}` };
+    }
+    const stepType = step.step_type || 'MESSAGE';
+
+    if (stepType === 'TALK_INVITE') {
+      const result = await dispatchTalkInvite({ leadId, stepId });
+      return { success: result.success, stepType, message: result.message, error: result.error };
+    }
+
+    const lead = store.leads.find((l) => l.id === leadId);
+    if (!lead) {
+      return { success: false, stepType, error: `Lead not found: ${leadId}` };
+    }
+    if (!step.is_active) {
+      return { success: false, stepType, error: `Campaign step ${step.id} is inactive` };
+    }
+
+    const campaign = store.campaigns.find((c) => c.id === step.campaign_id);
+    const company = store.companies.find((c) => c.id === lead.company_id);
+    const sender = store.users.find((u) => u.id === lead.assigned_user_id) || store.users[2];
+    const vars = leadTemplateVariables(lead, { city: company?.city, orgName: store.org.name, senderName: sender?.full_name });
+
+    const body = renderTemplate(step.body_template, vars);
+    const subject = step.subject_template ? renderTemplate(step.subject_template, vars) : undefined;
+    const unresolved = [...body.unresolved, ...(subject?.unresolved || [])];
+    if (unresolved.length > 0) {
+      return { success: false, stepType, error: `Unresolved template variables: ${unresolved.join(', ')}` };
+    }
+
+    const guardCheck = ComplianceGuard.checkOutboundMessage({
+      channel: step.channel,
+      recipientEmail: lead.email,
+      recipientPhone: lead.phone,
+      subject: subject?.text,
+      body: body.text,
+    });
+    if (!guardCheck.allowed && guardCheck.violations.some((v) => v.startsWith('SUPPRESSION') || v === 'KILL_SWITCH_ACTIVE')) {
+      return { success: false, stepType, error: guardCheck.reason };
+    }
+
+    const requiresApproval = (campaign?.approval_mode || 'MANUAL') === 'MANUAL' || !guardCheck.allowed;
+    const message: OutboundMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: store.org.id,
+      lead_id: lead.id,
+      lead_name: lead.full_name,
+      lead_company: lead.company_name || company?.name || '',
+      campaign_id: step.campaign_id,
+      campaign_name: campaign?.name,
+      campaign_step_id: step.id,
+      channel: step.channel,
+      direction: 'OUTBOUND',
+      subject: subject?.text,
+      body: body.text,
+      status: requiresApproval ? 'PENDING_APPROVAL' : 'QUEUED',
+      requires_approval: requiresApproval,
+      error_message: guardCheck.allowed ? undefined : guardCheck.reason,
+      created_at: new Date().toISOString(),
+    };
+    store.messages.unshift(message);
+    if (lead.status === 'NEW' || lead.status === 'QUALIFIED') lead.status = 'OUTREACH';
+    store.recordAuditLog(
+      'AI_AGENT',
+      'OUTREACH_DRAFTED',
+      'message',
+      message.id,
+      `Drafted step ${step.step_number} (${step.channel}) for ${lead.full_name} (Approval Required: ${requiresApproval})`
+    );
+    return { success: true, stepType, message };
   }
 
   /**

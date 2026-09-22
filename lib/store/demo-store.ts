@@ -23,6 +23,7 @@ import {
   VoiceSettings,
 } from '../types';
 import { normalizeIndianPhone, normalizeEmail, detectIndianEntityType } from '../normalization/india';
+import { INITIAL_CAMPAIGN_STEPS } from './campaign-steps';
 
 // Default Organization
 export const DEFAULT_ORG: Organization = {
@@ -319,6 +320,7 @@ class DemoStore {
   public companies: Company[] = generateIndianCompanies();
   public leads: Lead[] = [];
   public campaigns: Campaign[] = [...INITIAL_CAMPAIGNS];
+  public campaignSteps: CampaignStep[] = INITIAL_CAMPAIGN_STEPS.map((s) => ({ ...s }));
   public messages: OutboundMessage[] = [];
   public conversations: Conversation[] = [];
   public meetings: Meeting[] = [];
@@ -820,6 +822,16 @@ class DemoStore {
     return this.voiceCalls;
   }
 
+  public getCampaignSteps(campaignId: string): CampaignStep[] {
+    return this.campaignSteps
+      .filter((s) => s.campaign_id === campaignId)
+      .sort((a, b) => a.step_number - b.step_number);
+  }
+
+  public getCampaignStep(stepId: string): CampaignStep | undefined {
+    return this.campaignSteps.find((s) => s.id === stepId);
+  }
+
   public getVoiceSettings(): VoiceSettings {
     return this.voiceSettings;
   }
@@ -1012,6 +1024,15 @@ class DemoStore {
       const lead = this.leads.find((l) => l.id === msg.lead_id);
       if (lead && (lead.status === 'NEW' || lead.status === 'QUALIFIED' || lead.status === 'OUTREACH')) {
         lead.status = 'CONTACTED';
+      }
+
+      // A talk invite that was approved is now on its way: mark the talk link as SENT.
+      if (msg.talk_session_id) {
+        const session = this.talkSessions.find((s) => s.id === msg.talk_session_id);
+        if (session && session.status === 'CREATED') {
+          session.status = 'SENT';
+          session.sent_at = msg.sent_at;
+        }
       }
 
       this.recordAuditLog(
