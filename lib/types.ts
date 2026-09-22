@@ -348,3 +348,125 @@ export interface AIRun {
   error_message?: string;
   created_at: string;
 }
+
+// ==============================================================================
+// PHASE 8: VOICE MODULE TYPES
+// ==============================================================================
+
+export type TalkSessionStatus =
+  | 'CREATED'
+  | 'SENT'
+  | 'OPENED'
+  | 'CALL_STARTED'
+  | 'COMPLETED'
+  | 'EXPIRED'
+  | 'REVOKED';
+
+export interface TalkSession {
+  id: string;
+  organization_id: string;
+  lead_id: string;
+  lead_name?: string;
+  lead_company?: string;
+  campaign_id?: string;
+  campaign_step_id?: string;
+  channel: 'email' | 'whatsapp' | 'manual';
+  token_hash: string;
+  token?: string; // Only present upon immediate generation
+  status: TalkSessionStatus;
+  expires_at: string;
+  max_calls: number;
+  call_count: number;
+  sent_at?: string;
+  opened_at?: string;
+  last_opened_at?: string;
+  revoked_at?: string;
+  revoked_reason?: string;
+  language: string;
+  created_at: string;
+}
+
+export interface TalkCallNonce {
+  id: string;
+  organization_id: string;
+  talk_session_id: string;
+  nonce_hash: string;
+  expires_at: string;
+  consumed_at?: string;
+  created_at: string;
+}
+
+export type VoiceCallMode = 'webrtc' | 'pstn';
+export type VoiceCallProvider = 'demo' | 'dograh';
+export type VoiceCallStatus =
+  | 'INITIATED'
+  | 'CONNECTED'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'NO_ANSWER'
+  | 'BLOCKED';
+
+export interface VoiceCall {
+  id: string;
+  organization_id: string;
+  lead_id: string;
+  lead_name?: string;
+  lead_company?: string;
+  talk_session_id?: string;
+  mode: VoiceCallMode;
+  provider: VoiceCallProvider;
+  provider_run_id?: string;
+  status: VoiceCallStatus;
+  started_at?: string;
+  ended_at?: string;
+  duration_seconds: number;
+  transcript: Array<{ role: 'agent' | 'user'; text: string; timestamp?: string }>;
+  extracted: {
+    intent?: string;
+    buying_stage?: string;
+    sentiment?: string;
+    qualification?: {
+      problem?: string;
+      need?: string;
+      urgency?: string;
+      authority?: string;
+      timeline?: string;
+      budget_signal?: string;
+    };
+    meeting_requested?: boolean;
+    meeting_id?: string;
+    handoff_requested?: boolean;
+    opt_out?: boolean;
+    language?: string;
+    summary?: string;
+    [key: string]: any;
+  };
+  intent?: string;
+  sentiment?: string;
+  disclosure_given: boolean;
+  consent_transcript: boolean;
+  recording_url?: string;
+  carrier_cost_estimate_inr: number;
+  created_at: string;
+}
+
+export interface VoiceSettings {
+  id: string;
+  organization_id: string;
+  voice_enabled: boolean;
+  web_voice_enabled: boolean;
+  pstn_enabled: boolean;
+  dlt_entity_id?: string;
+  caller_id_series?: '140' | '1600' | '1601';
+  oap_autodialer_notice_date?: string;
+  oap_notice_doc_url?: string;
+  calling_window_start: string;
+  calling_window_end: string;
+  timezone: string;
+  pstn_daily_cap: number;
+  talk_link_ttl_days: number;
+  talk_link_max_calls: number;
+  recording_enabled: boolean;
+  human_booking_url?: string;
+}
+

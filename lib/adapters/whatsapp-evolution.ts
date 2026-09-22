@@ -86,7 +86,7 @@ export class EvolutionWhatsAppEngine {
 
     try {
       const res = await fetch(`${url}/instance/connectionState/${instanceName}`, {
-        headers: { apikey: key },
+        headers: { apikey: key, 'Bypass-Tunnel-Reminder': 'true' },
         cache: 'no-store',
       });
 
@@ -102,7 +102,7 @@ export class EvolutionWhatsAppEngine {
           // Fetch owner details
           try {
             const infoRes = await fetch(`${url}/instance/fetchInstances?instanceName=${instanceName}`, {
-              headers: { apikey: key },
+              headers: { apikey: key, 'Bypass-Tunnel-Reminder': 'true' },
               cache: 'no-store',
             });
             if (infoRes.ok) {
@@ -141,7 +141,7 @@ export class EvolutionWhatsAppEngine {
     try {
       // 1. Ensure instance exists
       const checkRes = await fetch(`${url}/instance/connectionState/${instanceName}`, {
-        headers: { apikey: key },
+        headers: { apikey: key, 'Bypass-Tunnel-Reminder': 'true' },
         cache: 'no-store',
       });
 
@@ -151,6 +151,7 @@ export class EvolutionWhatsAppEngine {
           method: 'POST',
           headers: {
             apikey: key,
+            'Bypass-Tunnel-Reminder': 'true',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -163,7 +164,7 @@ export class EvolutionWhatsAppEngine {
 
       // 2. Fetch live QR Code from Evolution API
       const connectRes = await fetch(`${url}/instance/connect/${instanceName}`, {
-        headers: { apikey: key },
+        headers: { apikey: key, 'Bypass-Tunnel-Reminder': 'true' },
         cache: 'no-store',
       });
 

@@ -17,6 +17,9 @@ import {
   FitClassification,
   Channel,
   AISalesBrief,
+  TalkSession,
+  VoiceCall,
+  VoiceSettings,
 } from '../types';
 import { normalizeIndianPhone, normalizeEmail, detectIndianEntityType } from '../normalization/india';
 
@@ -321,10 +324,30 @@ class DemoStore {
   public tasks: Task[] = [];
   public auditLogs: AuditLog[] = [];
   public aiRuns: AIRun[] = [];
+  public talkSessions: TalkSession[] = [];
+  public voiceCalls: VoiceCall[] = [];
+  public voiceSettings: VoiceSettings = {
+    id: 'vset_01',
+    organization_id: DEFAULT_ORG.id,
+    voice_enabled: true,
+    web_voice_enabled: true,
+    pstn_enabled: false,
+    dlt_entity_id: '110155223344',
+    caller_id_series: '140',
+    calling_window_start: '09:00',
+    calling_window_end: '21:00',
+    timezone: 'Asia/Kolkata',
+    pstn_daily_cap: 50,
+    talk_link_ttl_days: 7,
+    talk_link_max_calls: 3,
+    recording_enabled: true,
+    human_booking_url: 'https://cal.com/apex-enterprise/discovery',
+  };
 
   constructor() {
     this.leads = generateIndianLeads(this.companies);
     this.seedInitialOutboundAndConversations();
+    this.seedInitialVoiceModule();
   }
 
   private seedInitialOutboundAndConversations() {
@@ -543,6 +566,316 @@ class DemoStore {
       }
     );
   }
+
+  private seedInitialVoiceModule() {
+    // 10 Demo Talk Sessions
+    const statuses: Array<{ id: string; leadIdx: number; status: any; channel: any; expiresOffsetDays: number; sentOffsetH?: number; openedOffsetH?: number; revokedReason?: string }> = [
+      { id: 'ts_01', leadIdx: 0, status: 'CREATED', channel: 'email', expiresOffsetDays: 7 },
+      { id: 'ts_02', leadIdx: 1, status: 'SENT', channel: 'whatsapp', expiresOffsetDays: 6, sentOffsetH: 12 },
+      { id: 'ts_03', leadIdx: 2, status: 'SENT', channel: 'email', expiresOffsetDays: 6, sentOffsetH: 24 },
+      { id: 'ts_04', leadIdx: 3, status: 'OPENED', channel: 'email', expiresOffsetDays: 5, sentOffsetH: 30, openedOffsetH: 2 },
+      { id: 'ts_05', leadIdx: 4, status: 'OPENED', channel: 'whatsapp', expiresOffsetDays: 5, sentOffsetH: 18, openedOffsetH: 1 },
+      { id: 'ts_06', leadIdx: 5, status: 'CALL_STARTED', channel: 'email', expiresOffsetDays: 4, sentOffsetH: 20, openedOffsetH: 0.5 },
+      { id: 'ts_07', leadIdx: 0, status: 'COMPLETED', channel: 'email', expiresOffsetDays: 3, sentOffsetH: 48, openedOffsetH: 24 },
+      { id: 'ts_08', leadIdx: 1, status: 'COMPLETED', channel: 'whatsapp', expiresOffsetDays: 3, sentOffsetH: 50, openedOffsetH: 25 },
+      { id: 'ts_09', leadIdx: 6, status: 'EXPIRED', channel: 'email', expiresOffsetDays: -2, sentOffsetH: 200 },
+      { id: 'ts_10', leadIdx: 7, status: 'REVOKED', channel: 'whatsapp', expiresOffsetDays: 2, sentOffsetH: 36, revokedReason: 'Prospect requested DO NOT CONTACT' },
+    ];
+
+    statuses.forEach((s) => {
+      const lead = this.leads[s.leadIdx] || this.leads[0];
+      const token = `demo_token_${s.id}_${Math.random().toString(36).substring(2, 10)}`;
+      this.talkSessions.push({
+        id: s.id,
+        organization_id: this.org.id,
+        lead_id: lead.id,
+        lead_name: lead.full_name,
+        lead_company: lead.company_name,
+        campaign_id: this.campaigns[0]?.id,
+        channel: s.channel,
+        token_hash: `hash_${s.id}_${token.substring(0, 12)}`,
+        token: token,
+        status: s.status,
+        expires_at: new Date(Date.now() + s.expiresOffsetDays * 86400000).toISOString(),
+        max_calls: 3,
+        call_count: s.status === 'COMPLETED' ? 1 : s.status === 'CALL_STARTED' ? 1 : 0,
+        sent_at: s.sentOffsetH ? new Date(Date.now() - s.sentOffsetH * 3600000).toISOString() : undefined,
+        opened_at: s.openedOffsetH ? new Date(Date.now() - s.openedOffsetH * 3600000).toISOString() : undefined,
+        last_opened_at: s.openedOffsetH ? new Date(Date.now() - s.openedOffsetH * 3600000).toISOString() : undefined,
+        revoked_at: s.status === 'REVOKED' ? new Date().toISOString() : undefined,
+        revoked_reason: s.revokedReason,
+        language: 'en',
+        created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+      });
+    });
+
+    // 5 Completed Demo Voice Calls
+    this.voiceCalls.push(
+      {
+        id: 'vc_01',
+        organization_id: this.org.id,
+        lead_id: this.leads[0].id,
+        lead_name: this.leads[0].full_name,
+        lead_company: this.leads[0].company_name || 'Bharat Forgings',
+        talk_session_id: 'ts_07',
+        mode: 'webrtc',
+        provider: 'demo',
+        provider_run_id: 'run_webrtc_001',
+        status: 'COMPLETED',
+        started_at: new Date(Date.now() - 86400000).toISOString(),
+        ended_at: new Date(Date.now() - 86400000 + 185000).toISOString(),
+        duration_seconds: 185,
+        transcript: [
+          { role: 'agent', text: 'Namaste Rajesh ji, this is Apex AI calling from Apex Technologies regarding your B2B sales pipeline expansion in Pune. Do you have a moment?' },
+          { role: 'user', text: 'Yes, but be quick. We have reps using Excel and manual follow-ups right now.' },
+          { role: 'agent', text: 'Understood. We partner with Tier-1 manufacturers to automate 15+ weekly hours of manual follow-ups so reps focus purely on qualified leads. Would you be open to a short discovery demo this Thursday?' },
+          { role: 'user', text: 'That could be useful. What time on Thursday?' },
+          { role: 'agent', text: 'I have 3:00 PM IST or 4:30 PM IST available with our senior solutions architect. Which works best?' },
+          { role: 'user', text: '3:00 PM IST works. Send the calendar invite to my email.' },
+        ],
+        extracted: {
+          intent: 'REQUEST_DEMO',
+          buying_stage: 'EVALUATING',
+          sentiment: 'POSITIVE',
+          qualification: {
+            problem: 'Manual Excel tracking and delayed lead follow-ups',
+            need: 'Automated pipeline prioritization',
+            urgency: 'HIGH',
+            authority: 'VP Sales (Sole Signer)',
+            timeline: 'This Quarter',
+            budget_signal: 'Approved annual sales enablement budget',
+          },
+          meeting_requested: true,
+          meeting_id: 'meet_01',
+          handoff_requested: true,
+          opt_out: false,
+          language: 'Hinglish',
+          summary: 'Rajesh confirmed pain with manual rep follow-ups. Booked 15-minute discovery demo for Thursday at 3:00 PM IST.',
+        },
+        intent: 'REQUEST_DEMO',
+        sentiment: 'POSITIVE',
+        disclosure_given: true,
+        consent_transcript: true,
+        recording_url: 'https://demo-storage.apextech.in/recordings/call_01.mp3',
+        carrier_cost_estimate_inr: 0.0,
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+      {
+        id: 'vc_02',
+        organization_id: this.org.id,
+        lead_id: this.leads[1].id,
+        lead_name: this.leads[1].full_name,
+        lead_company: this.leads[1].company_name || 'QuickLogix',
+        talk_session_id: 'ts_08',
+        mode: 'webrtc',
+        provider: 'demo',
+        provider_run_id: 'run_webrtc_002',
+        status: 'COMPLETED',
+        started_at: new Date(Date.now() - 72000000).toISOString(),
+        ended_at: new Date(Date.now() - 72000000 + 142000).toISOString(),
+        duration_seconds: 142,
+        transcript: [
+          { role: 'agent', text: 'Hi Amitabh ji, Apex AI assistant here. Reaching out regarding your 3PL fleet cold-chain expansion in Haryana.' },
+          { role: 'user', text: 'Hello. We are looking at automation solutions, what is your commercial pricing?' },
+          { role: 'agent', text: 'We offer seat-based and volume-based plans tailored for Indian logistics MSMEs. Would you like our solutions director to share the specific commercial tier breakdown over a brief call?' },
+          { role: 'user', text: 'Yes, please have someone connect with me on Friday morning.' },
+        ],
+        extracted: {
+          intent: 'REQUEST_PRICING',
+          buying_stage: 'EVALUATING',
+          sentiment: 'POSITIVE',
+          qualification: {
+            problem: 'Scaling inbound client inquiries across newly expanded fleet',
+            urgency: 'MEDIUM',
+            budget_signal: 'INR 15L-25L allocated for automation',
+          },
+          handoff_requested: true,
+          meeting_requested: true,
+          opt_out: false,
+          language: 'English',
+          summary: 'Amitabh inquired about commercial tiers for QuickLogix. Requested Account Executive follow-up Friday morning.',
+        },
+        intent: 'REQUEST_PRICING',
+        sentiment: 'POSITIVE',
+        disclosure_given: true,
+        consent_transcript: true,
+        recording_url: 'https://demo-storage.apextech.in/recordings/call_02.mp3',
+        carrier_cost_estimate_inr: 0.0,
+        created_at: new Date(Date.now() - 72000000).toISOString(),
+      },
+      {
+        id: 'vc_03',
+        organization_id: this.org.id,
+        lead_id: this.leads[2].id,
+        lead_name: this.leads[2].full_name,
+        lead_company: this.leads[2].company_name || 'Fintech Infra',
+        mode: 'webrtc',
+        provider: 'demo',
+        provider_run_id: 'run_webrtc_003',
+        status: 'COMPLETED',
+        started_at: new Date(Date.now() - 54000000).toISOString(),
+        ended_at: new Date(Date.now() - 54000000 + 95000).toISOString(),
+        duration_seconds: 95,
+        transcript: [
+          { role: 'agent', text: 'Hello Sunita ji, this is Apex AI calling from Apex Technologies. Am I speaking with Sunita?' },
+          { role: 'user', text: 'Yes, but we are currently heads-down in our SOC-2 compliance audit this month. Not looking at sales tools right now.' },
+          { role: 'agent', text: 'Completely understand Sunita ji. Good luck with the audit. May we reconnect in mid-November once your audit concludes?' },
+          { role: 'user', text: 'Sure, drop an email around Diwali.' },
+        ],
+        extracted: {
+          intent: 'NOT_NOW',
+          buying_stage: 'NURTURE',
+          sentiment: 'NEUTRAL',
+          timeline: 'Post-Diwali / November',
+          opt_out: false,
+          summary: 'Sunita busy with SOC-2 audit. Requested follow-up in November post-Diwali.',
+        },
+        intent: 'NOT_NOW',
+        sentiment: 'NEUTRAL',
+        disclosure_given: true,
+        consent_transcript: true,
+        carrier_cost_estimate_inr: 0.0,
+        created_at: new Date(Date.now() - 54000000).toISOString(),
+      },
+      {
+        id: 'vc_04',
+        organization_id: this.org.id,
+        lead_id: this.leads[3].id,
+        lead_name: this.leads[3].full_name,
+        lead_company: this.leads[3].company_name || 'Surat Textiles',
+        mode: 'pstn',
+        provider: 'demo',
+        provider_run_id: 'run_pstn_004',
+        status: 'COMPLETED',
+        started_at: new Date(Date.now() - 36000000).toISOString(),
+        ended_at: new Date(Date.now() - 36000000 + 210000).toISOString(),
+        duration_seconds: 210,
+        transcript: [
+          { role: 'agent', text: 'Namaste Deepa ji, this is an automated call from Apex Technologies on a verified business line regarding your export inquiries.' },
+          { role: 'user', text: 'Namaste. Haan boliye, kya jankari chahiye?' },
+          { role: 'agent', text: 'Hum Indian export textile companies ke saath partner karte hain buyer leads qualify karne ke liye. Kya humare business manager aapko ek chhota demo dikha sakte hain?' },
+          { role: 'user', text: 'Haan theek hai, Monday afternoon connect kar lijiye.' },
+        ],
+        extracted: {
+          intent: 'INTERESTED',
+          buying_stage: 'EVALUATING',
+          sentiment: 'POSITIVE',
+          language: 'Hindi',
+          meeting_requested: true,
+          opt_out: false,
+          summary: 'Deepa confirmed interest in export buyer lead automation. Agreed to Monday afternoon demo.',
+        },
+        intent: 'INTERESTED',
+        sentiment: 'POSITIVE',
+        disclosure_given: true,
+        consent_transcript: true,
+        carrier_cost_estimate_inr: 4.2,
+        created_at: new Date(Date.now() - 36000000).toISOString(),
+      },
+      {
+        id: 'vc_05',
+        organization_id: this.org.id,
+        lead_id: this.leads[4].id,
+        lead_name: this.leads[4].full_name,
+        lead_company: this.leads[4].company_name || 'Bengaluru SaaS',
+        mode: 'webrtc',
+        provider: 'demo',
+        provider_run_id: 'run_webrtc_005',
+        status: 'COMPLETED',
+        started_at: new Date(Date.now() - 18000000).toISOString(),
+        ended_at: new Date(Date.now() - 18000000 + 65000).toISOString(),
+        duration_seconds: 65,
+        transcript: [
+          { role: 'agent', text: 'Hi Vikram, this is Apex AI calling from Apex Technologies.' },
+          { role: 'user', text: 'Please remove my number and do not contact me again.' },
+          { role: 'agent', text: 'Understood Vikram. I have immediately opted you out and removed your record from all future communications. Have a good day.' },
+        ],
+        extracted: {
+          intent: 'UNSUBSCRIBE',
+          sentiment: 'NEGATIVE',
+          opt_out: true,
+          summary: 'Prospect explicitly requested DO NOT CONTACT. Immediately suppressed and session revoked.',
+        },
+        intent: 'UNSUBSCRIBE',
+        sentiment: 'NEGATIVE',
+        disclosure_given: true,
+        consent_transcript: true,
+        carrier_cost_estimate_inr: 0.0,
+        created_at: new Date(Date.now() - 18000000).toISOString(),
+      }
+    );
+  }
+
+  public getTalkSession(idOrToken: string): TalkSession | undefined {
+    return this.talkSessions.find(
+      (ts) => ts.id === idOrToken || ts.token_hash === idOrToken || ts.token === idOrToken
+    );
+  }
+
+  public addTalkSession(session: Partial<TalkSession>): TalkSession {
+    const fullSession: TalkSession = {
+      id: session.id || `ts_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: this.org.id,
+      lead_id: session.lead_id || this.leads[0].id,
+      lead_name: session.lead_name,
+      lead_company: session.lead_company,
+      campaign_id: session.campaign_id,
+      channel: session.channel || 'email',
+      token_hash: session.token_hash || `hash_${Date.now()}`,
+      token: session.token,
+      status: session.status || 'CREATED',
+      expires_at: session.expires_at || new Date(Date.now() + 7 * 86400000).toISOString(),
+      max_calls: session.max_calls || 3,
+      call_count: session.call_count || 0,
+      language: session.language || 'en',
+      created_at: new Date().toISOString(),
+    };
+    this.talkSessions.unshift(fullSession);
+    return fullSession;
+  }
+
+  public updateTalkSession(id: string, updates: Partial<TalkSession>): TalkSession | undefined {
+    const session = this.talkSessions.find((ts) => ts.id === id);
+    if (session) {
+      Object.assign(session, updates);
+    }
+    return session;
+  }
+
+  public recordVoiceCall(callData: Partial<VoiceCall>): VoiceCall {
+    const fullCall: VoiceCall = {
+      id: callData.id || `vc_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: this.org.id,
+      lead_id: callData.lead_id || this.leads[0].id,
+      lead_name: callData.lead_name,
+      lead_company: callData.lead_company,
+      talk_session_id: callData.talk_session_id,
+      mode: callData.mode || 'webrtc',
+      provider: callData.provider || 'demo',
+      provider_run_id: callData.provider_run_id || `run_${Date.now()}`,
+      status: callData.status || 'COMPLETED',
+      started_at: callData.started_at || new Date().toISOString(),
+      ended_at: callData.ended_at || new Date().toISOString(),
+      duration_seconds: callData.duration_seconds || 0,
+      transcript: callData.transcript || [],
+      extracted: callData.extracted || {},
+      intent: callData.intent,
+      sentiment: callData.sentiment,
+      disclosure_given: callData.disclosure_given ?? true,
+      consent_transcript: callData.consent_transcript ?? true,
+      recording_url: callData.recording_url,
+      carrier_cost_estimate_inr: callData.carrier_cost_estimate_inr || 0.0,
+      created_at: new Date().toISOString(),
+    };
+    this.voiceCalls.unshift(fullCall);
+    return fullCall;
+  }
+
+  public updateVoiceSettings(updates: Partial<VoiceSettings>): VoiceSettings {
+    Object.assign(this.voiceSettings, updates);
+    return this.voiceSettings;
+  }
+
 
   // Lead Management
   public addLead(leadData: Partial<Lead>): Lead {
