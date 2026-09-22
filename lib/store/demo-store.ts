@@ -24,6 +24,7 @@ import {
 } from '../types';
 import { normalizeIndianPhone, normalizeEmail, detectIndianEntityType } from '../normalization/india';
 import { INITIAL_CAMPAIGN_STEPS } from './campaign-steps';
+import { ComplianceGuard } from '../compliance/guard';
 
 // Default Organization
 export const DEFAULT_ORG: Organization = {
@@ -1058,6 +1059,8 @@ class DemoStore {
 
   public toggleKillSwitch(): boolean {
     this.org.emergency_kill_switch_active = !this.org.emergency_kill_switch_active;
+    // Keep the ComplianceGuard's static flag in step so every outbound gate sees the switch.
+    ComplianceGuard.setEmergencyKillSwitch(this.org.emergency_kill_switch_active);
     this.recordAuditLog(
       'USER',
       this.org.emergency_kill_switch_active ? 'EMERGENCY_KILL_SWITCH_ACTIVATED' : 'KILL_SWITCH_DEACTIVATED',

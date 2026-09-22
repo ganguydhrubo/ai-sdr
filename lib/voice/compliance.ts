@@ -183,3 +183,121 @@ export function checkPstnOutboundCompliance(
     violations,
   };
 }
+
+// ==========================================
+// ORGANISATION-LEVEL PSTN READINESS GATE (Voice Settings UI)
+// ==========================================
+
+export interface PstnGateItem {
+  id:
+    | 'kill_switch'
+    | 'voice_enabled'
+    | 'pstn_enabled'
+    | 'calling_window'
+    | 'dlt_entity_id'
+    | 'caller_id_series'
+    | 'oap_advance_notice'
+    | 'lead_scrubbing';
+  label: string;
+  passed: boolean;
+  detail: string;
+  /** What the operator must do when the item fails. */
+  action?: string;
+  /** Evaluated per lead at dial time rather than from settings. */
+  runtime?: boolean;
+}
+
+export interface PstnGateEvaluation {
+  ready: boolean;
+  passed: number;
+  total: number;
+  items: PstnGateItem[];
+  evaluatedAt: string;
+}
+
+/**
+ * The same eight checks as checkPstnOutboundCompliance(), expressed as a checklist the
+ * Voice Settings page can render. Items 1–7 come from organisation settings; item 8
+ * (suppression / NDNC) is evaluated for every lead when a call is triggered.
+ */
+export function evaluatePstnGate(settings: VoiceSettings, now: Date = new Date()): PstnGateEvaluation {
+  const window = checkCallingWindowIST(now);
+  const callerIdOk = !!settings.caller_id_series && isTraiCompliantCallerId(settings.caller_id_series);
+  const killSwitchActive = ComplianceGuard.isEmergencyKillSwitchActive();
+
+  const items: PstnGateItem[] = [
+    {
+      id: 'kill_switch',
+      label: 'Global emergency kill switch is off',
+      passed: !killSwitchActive,
+      detail: killSwitchActive ? 'Kill switch is engaged — all outbound is frozen.' : 'Outreach queues are running.',
+      action: 'Resume outreach from Admin & Guardrails once the incident is over.',
+    },
+    {
+      id: 'voice_enabled',
+      label: 'Voice module enabled',
+      passed: settings.voice_enabled,
+      detail: settings.voice_enabled ? 'Voice module is on.' : 'Voice module is disabled for the organisation.',
+      action: 'Turn on the voice module below.',
+    },
+    {
+      id: 'pstn_enabled',
+      label: 'PSTN outbound route enabled',
+      passed: settings.pstn_enabled,
+      detail: settings.pstn_enabled
+        ? 'Outbound phone calls via Dograh + Vobiz are enabled.'
+        : 'PSTN is off — only zero-cost WebRTC talk links are active.',
+      action: 'Enable PSTN only after every item below passes and the Vobiz trunk is commercially live.',
+    },
+    {
+      id: 'calling_window',
+      label: 'TRAI calling window 09:00–21:00 IST',
+      passed: settings.calling_window_start === '09:00' && settings.calling_window_end === '21:00',
+      detail:
+        `Configured ${settings.calling_window_start}–${settings.calling_window_end} ${settings.timezone}. ` +
+        (window.allowed ? `Calls are permitted right now (${window.timeString}).` : `Calls are blocked right now (${window.timeString}).`),
+      action: 'The window is fixed by TRAI TCCCPR; reset it to 09:00–21:00 Asia/Kolkata.',
+    },
+    {
+      id: 'dlt_entity_id',
+      label: 'DLT Principal Entity ID registered',
+      passed: !!settings.dlt_entity_id && settings.dlt_entity_id.trim() !== '',
+      detail: settings.dlt_entity_id ? `Entity ID ${settings.dlt_entity_id}` : 'No DLT Principal Entity ID on file.',
+      action: 'Register on a TRAI DLT platform (e.g. via the telecom operator) and enter the Principal Entity ID.',
+    },
+    {
+      id: 'caller_id_series',
+      label: 'Caller ID in TRAI 140 / 1600 / 1601 series',
+      passed: callerIdOk,
+      detail: callerIdOk
+        ? `Caller ID series ${settings.caller_id_series} is a commercial series.`
+        : `Caller ID '${settings.caller_id_series || 'UNSET'}' is not a 140/1600/1601 series number.`,
+      action: 'Obtain a 140-series (promotional) or 1600-series (transactional/service) number from the operator via Vobiz.',
+    },
+    {
+      id: 'oap_advance_notice',
+      label: 'Advance autodialer notice filed with the OAP',
+      passed: !!settings.advance_notice_given,
+      detail: settings.advance_notice_given
+        ? `Notice filed${settings.oap_autodialer_notice_date ? ` on ${settings.oap_autodialer_notice_date}` : ''}${settings.oap_notice_doc_url ? ' (document on file)' : ''}.`
+        : 'No advance notice recorded for automated/autodialer calling.',
+      action: 'File the advance notice with the Originating Access Provider and record the date and document link.',
+    },
+    {
+      id: 'lead_scrubbing',
+      label: 'Suppression list & NDNC scrubbing per lead',
+      passed: true,
+      runtime: true,
+      detail: 'Checked for every lead at dial time: suppression list, DND registry flag and express-consent exemption.',
+    },
+  ];
+
+  const passed = items.filter((i) => i.passed).length;
+  return {
+    ready: items.every((i) => i.passed),
+    passed,
+    total: items.length,
+    items,
+    evaluatedAt: now.toISOString(),
+  };
+}

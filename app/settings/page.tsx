@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import {
   Settings,
   Building,
@@ -12,6 +13,7 @@ import {
   Save,
   CheckCircle2,
   Key,
+  Phone,
 } from 'lucide-react';
 import { getDemoStore } from '../../lib/store/demo-store';
 import { ComplianceGuard } from '../../lib/compliance/guard';
@@ -107,6 +109,28 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Voice settings entry */}
+      <Link
+        href="/settings/voice"
+        data-testid="voice-settings-link"
+        className="block bg-white rounded-xl border border-slate-200 p-6 shadow-xs hover:border-indigo-400 transition-colors"
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-indigo-50">
+              <Phone className="w-6 h-6 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Voice Settings — talk links & TRAI PSTN gate</h2>
+              <p className="text-xs text-slate-500">
+                Zero-cost WebRTC &ldquo;Talk to our AI&rdquo; links, DLT / caller-ID / OAP compliance, and the eight-point checklist that must pass before PSTN calling is enabled.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-indigo-600 whitespace-nowrap">Open →</span>
+        </div>
+      </Link>
 
       {/* Dynamic ICP Scoring Engine Weights */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-5">
