@@ -13,6 +13,7 @@ const TalkInviteRequestSchema = z.object({
   language: z.string().optional(),
   expires_in_days: z.number().int().positive().max(30).optional(),
   max_calls: z.number().int().positive().max(10).optional(),
+  reminder_for_session_id: z.string().optional(),
 });
 
 /**
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest) {
     language: parsed.data.language,
     expiresInDays: parsed.data.expires_in_days,
     maxCalls: parsed.data.max_calls,
+    reminderForSessionId: parsed.data.reminder_for_session_id,
   });
 
   if (!result.success) {

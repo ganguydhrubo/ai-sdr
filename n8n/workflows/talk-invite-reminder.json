@@ -1,0 +1,186 @@
+{
+  "name": "ApexSDR Voice - Talk Invite Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 4 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule: Daily 10:00 IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.APP_URL }}/api/voice/talk-sessions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-Secret",
+              "value": "={{ $env.DOGRAH_TOOL_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "SENT"
+            },
+            {
+              "name": "unopened",
+              "value": "true"
+            },
+            {
+              "name": "sent_older_than_hours",
+              "value": "48"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        }
+      },
+      "name": "Apex: Unopened Links > 48h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = ($json.sessions || []);\nreturn sessions.map(s => ({ json: { lead_id: s.lead_id, reminder_for_session_id: s.id, lead_name: s.lead_name } }));"
+      },
+      "name": "Function: One Item Per Session",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APP_URL }}/api/voice/talk-invite",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-Secret",
+              "value": "={{ $env.DOGRAH_TOOL_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead_id: $json.lead_id, reminder_for_session_id: $json.reminder_for_session_id }) }}"
+      },
+      "name": "Apex: Send Reminder Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🔁 Talk-link reminder: ' + ($json.success ? 'new link ' + $json.talk_session_id + ' queued' : 'skipped — ' + $json.error) }) }}"
+      },
+      "name": "Slack: Reminder Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule: Daily 10:00 IST": {
+      "main": [
+        [
+          {
+            "node": "Apex: Unopened Links > 48h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apex: Unopened Links > 48h": {
+      "main": [
+        [
+          {
+            "node": "Function: One Item Per Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: One Item Per Session": {
+      "main": [
+        [
+          {
+            "node": "Apex: Send Reminder Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apex: Send Reminder Link": {
+      "main": [
+        [
+          {
+            "node": "Slack: Reminder Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

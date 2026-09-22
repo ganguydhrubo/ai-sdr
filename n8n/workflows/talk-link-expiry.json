@@ -1,0 +1,134 @@
+{
+  "name": "ApexSDR Voice - Talk Link Expiry",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule: Hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APP_URL }}/api/voice/talk-sessions/expire",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-Secret",
+              "value": "={{ $env.DOGRAH_TOOL_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}"
+      },
+      "name": "Apex: Expire Overdue Talk Links",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ($json.expired || 0) > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF: Any Expired?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '⌛ ' + $json.expired + ' talk link(s) expired at ' + $json.checkedAt + ': ' + ($json.sessionIds || []).join(', ') }) }}"
+      },
+      "name": "Slack: Expiry Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule: Hourly": {
+      "main": [
+        [
+          {
+            "node": "Apex: Expire Overdue Talk Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apex: Expire Overdue Talk Links": {
+      "main": [
+        [
+          {
+            "node": "IF: Any Expired?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Any Expired?": {
+      "main": [
+        [
+          {
+            "node": "Slack: Expiry Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -859,6 +859,7 @@ class DemoStore {
       lead_name: session.lead_name,
       lead_company: session.lead_company,
       campaign_id: session.campaign_id,
+      campaign_step_id: session.campaign_step_id,
       channel: session.channel || 'email',
       token_hash: session.token_hash || `hash_${Date.now()}`,
       token: session.token,
@@ -866,8 +867,13 @@ class DemoStore {
       expires_at: session.expires_at || new Date(Date.now() + 7 * 86400000).toISOString(),
       max_calls: session.max_calls || 3,
       call_count: session.call_count || 0,
+      sent_at: session.sent_at,
+      opened_at: session.opened_at,
+      last_opened_at: session.last_opened_at,
+      revoked_at: session.revoked_at,
+      revoked_reason: session.revoked_reason,
       language: session.language || 'en',
-      created_at: new Date().toISOString(),
+      created_at: session.created_at || new Date().toISOString(),
     };
     this.talkSessions.unshift(fullSession);
     return fullSession;

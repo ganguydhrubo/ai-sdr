@@ -1,0 +1,186 @@
+{
+  "name": "ApexSDR Voice - Talk Invite Dispatch",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "talk-invite",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook: Talk Invite Requested",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Accepts { lead_id, campaign_id?, step_id?, channel?, language? } from the CRM, a campaign\n// scheduler or a manual trigger, and forwards only the fields the Apex API understands.\nconst b = $json.body || $json;\nif (!b.lead_id) { throw new Error('lead_id is required'); }\nreturn [{ json: {\n  lead_id: String(b.lead_id),\n  campaign_id: b.campaign_id || undefined,\n  step_id: b.step_id || undefined,\n  channel: b.channel ? String(b.channel).toUpperCase() : undefined,\n  language: b.language || undefined,\n} }];"
+      },
+      "name": "Function: Normalise Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.APP_URL }}/api/voice/talk-invite",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-Secret",
+              "value": "={{ $env.DOGRAH_TOOL_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Apex: Mint & Queue Talk Invite",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success === true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF: Invite Queued?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🔗 Talk link ' + $json.talk_session_id + ' queued via ' + $json.channel + ' (approval: ' + $json.requires_approval + ', expires ' + $json.expires_at + ')' }) }}"
+      },
+      "name": "Slack: Invite Queued",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '⚠️ Talk invite failed: ' + ($json.error || 'unknown error') }) }}"
+      },
+      "name": "Slack: Invite Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: Talk Invite Requested": {
+      "main": [
+        [
+          {
+            "node": "Function: Normalise Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Normalise Request": {
+      "main": [
+        [
+          {
+            "node": "Apex: Mint & Queue Talk Invite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apex: Mint & Queue Talk Invite": {
+      "main": [
+        [
+          {
+            "node": "IF: Invite Queued?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Invite Queued?": {
+      "main": [
+        [
+          {
+            "node": "Slack: Invite Queued",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: Invite Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

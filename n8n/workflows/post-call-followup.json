@@ -1,0 +1,254 @@
+{
+  "name": "ApexSDR Voice - Post-Call Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "post-call",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook: Voice Call Completed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !$env.N8N_WEBHOOK_SECRET || $json.headers['x-webhook-secret'] === $env.N8N_WEBHOOK_SECRET }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF: Apex Secret Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        350,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const c = $json.body || $json;\nconst g = c.extracted || {};\nconst outcome = g.opt_out ? 'OPT_OUT' : g.meeting_requested ? 'MEETING' : g.handoff_requested ? 'HANDOFF' : 'FOLLOW_UP';\nreturn [{ json: { ...c, outcome, summary: g.summary || 'Thanks for speaking with our AI assistant.' } }];"
+      },
+      "name": "Function: Classify Outcome",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.outcome }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "OPT_OUT",
+              "output": 0
+            },
+            {
+              "value2": "MEETING",
+              "output": 1
+            },
+            {
+              "value2": "HANDOFF",
+              "output": 2
+            }
+          ]
+        },
+        "fallbackOutput": 3
+      },
+      "name": "Switch: Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "note",
+              "value": "Prospect opted out during the call; suppression already applied by Apex. No follow-up sent."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set: Opted Out — No Contact",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM, to: [$json.lead_email], subject: 'Your meeting with ' + ($env.ORG_NAME || 'us') + ' is booked', text: 'Hi ' + ($json.lead_first_name || '') + ',\\n\\nThanks for talking to our AI assistant. Your meeting is booked and the calendar invite is on its way.\\n\\nSummary: ' + $json.summary + '\\n\\nTo opt out of future emails, reply with unsubscribe.' }) }}"
+      },
+      "name": "Resend: Meeting Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🙋 Handoff requested by ' + $json.lead_name + ' (' + $json.lead_company + '): ' + $json.summary + ' — call ' + $json.call_id }) }}"
+      },
+      "name": "Slack: Human Handoff Needed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.RESEND_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ from: $env.RESEND_FROM, to: [$json.lead_email], subject: 'Thanks for talking to us, ' + ($json.lead_first_name || ''), text: 'Hi ' + ($json.lead_first_name || '') + ',\\n\\nThanks for your time today. Here is a short summary of what we discussed:\\n\\n' + $json.summary + '\\n\\nReply to this email if you would like a human to follow up.\\n\\nTo opt out of future emails, reply with unsubscribe.' }) }}"
+      },
+      "name": "Resend: Follow-up Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        580
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: Voice Call Completed": {
+      "main": [
+        [
+          {
+            "node": "IF: Apex Secret Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Apex Secret Valid?": {
+      "main": [
+        [
+          {
+            "node": "Function: Classify Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function: Classify Outcome": {
+      "main": [
+        [
+          {
+            "node": "Switch: Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: Outcome": {
+      "main": [
+        [
+          {
+            "node": "Set: Opted Out — No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resend: Meeting Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: Human Handoff Needed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resend: Follow-up Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -18,6 +18,8 @@ export interface DispatchTalkInviteParams {
   language?: string;
   expiresInDays?: number;
   maxCalls?: number;
+  /** Reminder: supersede this unopened session with a fresh link on the same channel/step. */
+  reminderForSessionId?: string;
 }
 
 export interface DispatchTalkInviteResult {
@@ -57,9 +59,24 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
     return { success: false, error: `Lead not found: ${params.leadId}` };
   }
 
-  const step: CampaignStep | undefined = params.stepId ? store.getCampaignStep(params.stepId) : undefined;
-  if (params.stepId && !step) {
-    return { success: false, error: `Campaign step not found: ${params.stepId}` };
+  let previous: TalkSession | undefined;
+  if (params.reminderForSessionId) {
+    previous = store.getTalkSessions().find((s) => s.id === params.reminderForSessionId);
+    if (!previous) {
+      return { success: false, error: `Talk session not found: ${params.reminderForSessionId}` };
+    }
+    if (previous.lead_id !== lead.id) {
+      return { success: false, error: 'Talk session does not belong to this lead' };
+    }
+    if (!['CREATED', 'SENT'].includes(previous.status) || previous.opened_at) {
+      return { success: false, error: `Talk session ${previous.id} is ${previous.status}${previous.opened_at ? ' and already opened' : ''}; no reminder sent` };
+    }
+  }
+
+  const stepId = params.stepId || previous?.campaign_step_id;
+  const step: CampaignStep | undefined = stepId ? store.getCampaignStep(stepId) : undefined;
+  if (stepId && !step) {
+    return { success: false, error: `Campaign step not found: ${stepId}` };
   }
   if (step && (step.step_type || 'MESSAGE') !== 'TALK_INVITE') {
     return { success: false, error: `Campaign step ${step.id} is not a TALK_INVITE step` };
@@ -68,7 +85,8 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
     return { success: false, error: `Campaign step ${step.id} is inactive` };
   }
 
-  const channel: Channel = step?.channel || params.channel || 'EMAIL';
+  const channel: Channel =
+    step?.channel || params.channel || (previous?.channel === 'whatsapp' ? 'WHATSAPP' : previous ? 'EMAIL' : 'EMAIL');
   if (channel !== 'EMAIL' && channel !== 'WHATSAPP') {
     return { success: false, error: `Talk invites can only be sent by EMAIL or WHATSAPP (got ${channel})` };
   }
@@ -80,7 +98,7 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
 
   // Suppression / kill switch / content checks happen BEFORE a token is minted so that
   // opted-out prospects never get a live link.
-  const campaignId = step?.campaign_id || params.campaignId;
+  const campaignId = step?.campaign_id || params.campaignId || previous?.campaign_id;
   const campaign = campaignId ? store.campaigns.find((c) => c.id === campaignId) : undefined;
   const company = store.companies.find((c) => c.id === lead.company_id);
   const sender = store.users.find((u) => u.id === lead.assigned_user_id) || store.users[2];
@@ -103,6 +121,13 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
     return { success: false, error: preCheck.reason || 'Blocked by ComplianceGuard' };
   }
 
+  if (previous) {
+    // The old token cannot be re-sent (only its hash is stored), so retire it before minting a new one.
+    previous.status = 'REVOKED';
+    previous.revoked_at = new Date().toISOString();
+    previous.revoked_reason = 'Superseded by reminder link';
+  }
+
   const minted = await mintTalkToken({
     organizationId: store.org.id,
     leadId: lead.id,
@@ -110,7 +135,7 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
     leadCompany: lead.company_name,
     campaignId,
     channel: toSessionChannel(channel),
-    language: step?.talk_link_language || params.language || 'en',
+    language: step?.talk_link_language || params.language || previous?.language || 'en',
     expiresInDays: step?.talk_link_expires_in_days ?? params.expiresInDays ?? settings.talk_link_ttl_days,
     maxCalls: step?.talk_link_max_calls ?? params.maxCalls ?? settings.talk_link_max_calls,
   });
@@ -180,7 +205,7 @@ export async function dispatchTalkInvite(params: DispatchTalkInviteParams): Prom
 
   store.recordAuditLog(
     'AI_AGENT',
-    'TALK_INVITE_DRAFTED',
+    previous ? 'TALK_INVITE_REMINDER_DRAFTED' : 'TALK_INVITE_DRAFTED',
     'message',
     message.id,
     `Talk link ${session.id} minted for ${lead.full_name} (${channel}${step ? `, step ${step.step_number}` : ''}; expires ${vars.talk_link_expires}; approval required: ${requiresApproval})`

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getVoiceProvider } from '@/lib/voice/provider';
 import { DograhWebhookPayloadSchema } from '@/lib/voice/schemas';
 import { getDemoStore } from '@/lib/store/demo-store';
+import { notifyPostCallWorkflow } from '@/lib/voice/notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Hand the outcome to the n8n post-call follow-up workflow (no-op unless configured).
+    void notifyPostCallWorkflow(result);
 
     return NextResponse.json({
       success: true,
