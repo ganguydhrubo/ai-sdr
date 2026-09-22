@@ -35,12 +35,12 @@ export function Header({ onOpenCommandPalette, killSwitchActive, onToggleKillSwi
         </button>
       </div>
 
-      {/* Right: Demo Mode Tag, Kill Switch & User Avatar */}
+      {/* Right: Mode Tag, Kill Switch & User Avatar */}
       <div className="flex items-center gap-3">
-        {/* DEMO MODE Pill */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-semibold">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-          <span>DEMO MODE (₹0 Spend)</span>
+        {/* Live Production Status Pill */}
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 rounded-full text-xs font-semibold">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>PRODUCTION LIVE (Groq &amp; Resend)</span>
         </div>
 
         {/* Global Emergency Kill Switch */}

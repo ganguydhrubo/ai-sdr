@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldCheck,
   Zap,
+  Smartphone,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { label: 'Leads (B2B)', href: '/leads', icon: Users },
   { label: 'Pipeline CRM', href: '/pipeline', icon: Kanban },
   { label: 'Campaigns', href: '/campaigns', icon: Send },
+  { label: 'WhatsApp Hub (Baileys)', href: '/whatsapp', icon: Smartphone },
   { label: 'Conversations & Inbox', href: '/inbox', icon: MessageSquare },
   { label: 'Meetings & Briefs', href: '/meetings', icon: Calendar },
   { label: 'Sales Handoff Tasks', href: '/tasks', icon: CheckSquare },
