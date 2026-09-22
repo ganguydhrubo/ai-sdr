@@ -3,13 +3,13 @@ import { DemoAIProvider } from './demo-provider';
 import { SDR_SYSTEM_PROMPT } from './prompts/sdr-system-prompt';
 
 export class GroqProvider implements LLMProvider {
-  public name = 'GroqProvider (Llama-3.3-70B)';
+  public name = 'GroqProvider (GPT-OSS-120B / Qwen-27B)';
   private apiKey?: string;
   private defaultModel: string;
 
-  constructor(apiKey?: string, model = 'llama-3.3-70b-versatile') {
+  constructor(apiKey?: string, model?: string) {
     this.apiKey = apiKey || process.env.GROQ_API_KEY;
-    this.defaultModel = model;
+    this.defaultModel = model || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
   }
 
   public async generateCompletion(prompt: string, options?: CompletionOptions): Promise<CompletionResult> {
@@ -21,55 +21,61 @@ export class GroqProvider implements LLMProvider {
 
     const startTime = Date.now();
     const systemPrompt = options?.systemPrompt || SDR_SYSTEM_PROMPT;
+    const modelsToTry = [this.defaultModel, 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
 
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.defaultModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: prompt },
-          ],
-          temperature: options?.temperature ?? 0.2,
-          max_tokens: options?.maxTokens ?? 1024,
-          response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
-        }),
-      });
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: prompt },
+            ],
+            temperature: options?.temperature ?? 0.2,
+            max_tokens: options?.maxTokens ?? 1024,
+            response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Groq API returned status ${response.status}: ${await response.text()}`);
+        if (!response.ok) {
+          console.warn(`Groq model ${modelName} returned status ${response.status}`);
+          continue;
+        }
+
+        const json = await response.json();
+        const choice = json.choices?.[0];
+        const text = choice?.message?.content || '';
+        const promptTokens = json.usage?.prompt_tokens || 0;
+        const completionTokens = json.usage?.completion_tokens || 0;
+        const totalTokens = json.usage?.total_tokens || promptTokens + completionTokens;
+
+        const estimatedCostUsd = (promptTokens * 0.59 + completionTokens * 0.79) / 1_000_000;
+        const latencyMs = Date.now() - startTime;
+
+        return {
+          text,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          estimatedCostUsd,
+          latencyMs,
+          model: modelName,
+        };
+      } catch (err) {
+        console.warn(`Attempt with ${modelName} failed:`, err);
       }
-
-      const json = await response.json();
-      const choice = json.choices?.[0];
-      const text = choice?.message?.content || '';
-      const promptTokens = json.usage?.prompt_tokens || 0;
-      const completionTokens = json.usage?.completion_tokens || 0;
-      const totalTokens = json.usage?.total_tokens || promptTokens + completionTokens;
-
-      // Approximate cost for Groq Llama-3.3-70B: ~$0.59 / 1M prompt, $0.79 / 1M completion
-      const estimatedCostUsd = (promptTokens * 0.59 + completionTokens * 0.79) / 1_000_000;
-      const latencyMs = Date.now() - startTime;
-
-      return {
-        text,
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        estimatedCostUsd,
-        latencyMs,
-        model: this.defaultModel,
-      };
-    } catch (error) {
-      console.warn('Groq API call failed or rate limited, falling back to Demo Provider:', error);
-      const fallback = new DemoAIProvider();
-      return fallback.generateCompletion(prompt, options);
     }
+
+    // If all models failed, fall back to Demo Provider
+    console.warn('All Groq models failed or rate limited, falling back to Demo Provider');
+    const fallback = new DemoAIProvider();
+    return fallback.generateCompletion(prompt, options);
   }
 
   public async generateStructuredJson<T>(
