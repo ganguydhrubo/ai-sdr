@@ -18,6 +18,7 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Phone,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -480,12 +481,28 @@ export default function WhatsAppHubPage() {
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-700">Base Pitch</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-slate-700">Base Pitch</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!testBaseMessage.includes('{{talk_link}}')) {
+                      setTestBaseMessage(
+                        (prev) => `${prev.trim()}\n\nOr click here to talk directly with our AI representative: {{talk_link}}`
+                      );
+                    }
+                  }}
+                  className="text-[11px] text-violet-600 hover:text-violet-800 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Phone className="w-3 h-3 text-violet-500" />
+                  <span>+ Attach WebRTC Talk Link</span>
+                </button>
+              </div>
               <textarea
-                rows={2}
+                rows={3}
                 value={testBaseMessage}
                 onChange={(e) => setTestBaseMessage(e.target.value)}
-                className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-xs focus:outline-emerald-500"
+                className="w-full mt-1 border border-slate-200 rounded-lg p-2 text-xs focus:outline-emerald-500 font-sans"
               />
             </div>
 

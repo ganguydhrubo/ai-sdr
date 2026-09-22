@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Zap,
   Smartphone,
+  PhoneCall,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { label: 'Leads (B2B)', href: '/leads', icon: Users },
   { label: 'Pipeline CRM', href: '/pipeline', icon: Kanban },
   { label: 'Campaigns', href: '/campaigns', icon: Send },
+  { label: 'Voice & AI Calls', href: '/voice', icon: PhoneCall, badge: 'WEBRTC' },
   { label: 'WhatsApp Hub (Baileys)', href: '/whatsapp', icon: Smartphone },
   { label: 'Conversations & Inbox', href: '/inbox', icon: MessageSquare },
   { label: 'Meetings & Briefs', href: '/meetings', icon: Calendar },
@@ -68,14 +70,21 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={clsx(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                'flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               )}
             >
-              <Icon className={clsx('w-4 h-4', isActive ? 'text-white' : 'text-slate-400')} />
-              <span>{item.label}</span>
+              <div className="flex items-center gap-3">
+                <Icon className={clsx('w-4 h-4', isActive ? 'text-white' : 'text-slate-400')} />
+                <span>{item.label}</span>
+              </div>
+              {item.badge && (
+                <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}

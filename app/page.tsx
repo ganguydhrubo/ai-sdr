@@ -158,12 +158,18 @@ export default function DashboardPage() {
       {/* Voice module row */}
       <div className="space-y-2" data-testid="voice-analytics">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <Phone className="w-3.5 h-3.5 text-violet-500" /> Voice — talk links & AI calls
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+            <Phone className="w-3.5 h-3.5 text-violet-500" /> Voice &amp; AI Calls (WebRTC)
           </h2>
-          <Link href="/settings/voice" className="text-[11px] font-semibold text-indigo-600 hover:underline">
-            Voice settings →
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/voice" className="text-xs font-bold text-violet-600 hover:text-violet-800 flex items-center gap-1">
+              <span>Open Voice Hub</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+            <Link href="/settings/voice" className="text-xs font-medium text-slate-500 hover:text-slate-700">
+              Settings
+            </Link>
+          </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs" data-testid="voice-card-links">
