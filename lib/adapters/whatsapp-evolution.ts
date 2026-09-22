@@ -48,15 +48,13 @@ export class EvolutionWhatsAppEngine {
   private static instance: WhatsAppInstance = {
     id: 'inst_apex_001',
     name: 'apex_sales_01',
-    status: 'CONNECTED',
-    connectedPhone: '+91 98765 43210',
-    profileName: 'Arjun Mehta (Apex Tech SDR)',
+    status: 'DISCONNECTED',
     antiBan: {
       minDelaySeconds: 15,
       maxDelaySeconds: 42,
       enableDynamicAiVariation: true,
       dailyLimit: 50,
-      sentToday: 12,
+      sentToday: 0,
     },
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
