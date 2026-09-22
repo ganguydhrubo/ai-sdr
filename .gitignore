@@ -32,3 +32,8 @@ next-env.d.ts
 
 supabase/.temp/
 .vercel/
+
+# Playwright
+/playwright-report/
+/test-results/
+/playwright/.auth/

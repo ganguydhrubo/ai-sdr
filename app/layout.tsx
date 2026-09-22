@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import './globals.css';
 import { Sidebar } from '../components/layout/sidebar';
 import { Header } from '../components/layout/header';
@@ -16,6 +17,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const newState = store.toggleKillSwitch();
     setKillSwitchActive(newState);
   };
+
+  // Public, prospect-facing routes render without the admin shell (no sidebar/header),
+  // so the talk page fits a 375px phone screen.
+  const pathname = usePathname();
+  const isPublicRoute = !!pathname && pathname.startsWith('/talk/');
+
+  if (isPublicRoute) {
+    return (
+      <html lang="en">
+        <head>
+          <title>Talk to our AI SDR | Apex Technologies</title>
+          <meta name="description" content="Direct browser-based AI voice consultation with Apex SDR." />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </head>
+        <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">{children}</body>
+      </html>
+    );
+  }
 
   return (
     <html lang="en">

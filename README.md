@@ -96,10 +96,21 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### 4. Run Test Suite & Typecheck
 ```bash
-npm run test
+npm run lint
 npm run typecheck
+npm run test          # vitest unit/integration suite (tests/*.test.ts)
 npm run build
 ```
+
+### 5. Browser verification (Playwright)
+```bash
+npx playwright install chromium   # once
+npm run test:e2e                  # starts the dev server on port 3100 in DEMO_MODE; mobile-375 + desktop projects
+npm run test:e2e:mobile           # only the 375px project (the voice module's acceptance criterion)
+npx playwright show-report
+```
+`tests/e2e/voice-module.e2e.ts` covers the public talk page (disclosure, consent, a full simulated call,
+server-side completion), the Voice Settings gate, the TALK_INVITE campaign step and the dashboard voice cards.
 
 ---
 

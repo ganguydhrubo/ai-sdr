@@ -43,6 +43,8 @@ export class DograhDriver {
   private onCallComplete: (summary: string) => void;
   private simulationTimer?: NodeJS.Timeout;
   private isSimulated = false;
+  /** True between startCall() and the end of the call — endCall() is a no-op otherwise. */
+  private callActive = false;
 
   constructor(options: {
     token: string;
@@ -115,12 +117,14 @@ export class DograhDriver {
     });
 
     w.onCallDisconnected((payload) => {
+      this.callActive = false;
       this.onStateChange('ended', 'Call finished');
       this.postEvent('call_completed', { durationSeconds: payload.durationSeconds });
       this.onCallComplete('WebRTC consultation completed. Next steps delivered.');
     });
 
     w.onError((err) => {
+      this.callActive = false;
       this.onStateChange('error', err.message);
       this.postEvent('error', { details: err.message });
     });
@@ -138,6 +142,8 @@ export class DograhDriver {
       return;
     }
 
+    this.callActive = true;
+
     if (!this.isSimulated && window.DograhWidget) {
       window.DograhWidget.setContext({
         talk_ref: contextNonce,
@@ -154,7 +160,14 @@ export class DograhDriver {
   public endCall(): void {
     if (this.simulationTimer) {
       clearTimeout(this.simulationTimer);
+      this.simulationTimer = undefined;
     }
+    // React Strict Mode mounts effects twice in development; the component's cleanup calls
+    // endCall() before any call exists. Nothing must be reported in that case.
+    if (!this.callActive) {
+      return;
+    }
+    this.callActive = false;
     if (!this.isSimulated && window.DograhWidget) {
       window.DograhWidget.end();
     } else {
@@ -213,6 +226,7 @@ export class DograhDriver {
 
     const executeStep = () => {
       if (currentStep >= script.length) {
+        this.callActive = false;
         this.onStateChange('ended', 'Call successfully completed');
         this.postEvent('call_completed', { durationSeconds: 28 });
         this.onCallComplete(
