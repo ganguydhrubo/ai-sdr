@@ -1,11 +1,14 @@
 import { Metadata } from 'next';
 import { resolvePublicTalkContext } from '@/lib/voice/resolver';
+import { getDemoStore } from '@/lib/store/demo-store';
 import TalkClientInterface from './talk-client';
 
 export const metadata: Metadata = {
   title: 'Talk to our AI SDR | Apex Technologies',
   description: 'Direct browser-based AI voice consultation with Apex SDR.',
 };
+
+export const dynamic = 'force-dynamic';
 
 export default async function TalkPage({
   params,
@@ -58,9 +61,14 @@ export default async function TalkPage({
     );
   }
 
+  const settings = getDemoStore().getVoiceSettings();
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6">
-      <TalkClientInterface token={token} context={resolution.publicContext} />
+      <TalkClientInterface
+        token={token}
+        context={{ ...resolution.publicContext, bookingUrl: settings.human_booking_url, recordingEnabled: settings.recording_enabled }}
+      />
     </div>
   );
 }

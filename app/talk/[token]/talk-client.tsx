@@ -9,12 +9,15 @@ import {
   Calendar,
   CheckCircle,
   AlertTriangle,
-  Radio,
   FileText,
   ChevronDown,
   ChevronUp,
+  Send,
+  Keyboard,
+  UserCheck,
 } from 'lucide-react';
 import { DograhDriver, CallState, TranscriptTurn } from './dograh-driver';
+import { LocalVoiceDriver, InputMode, AgentApplied } from './local-voice-driver';
 
 interface TalkClientInterfaceProps {
   token: string;
@@ -28,13 +31,20 @@ interface TalkClientInterfaceProps {
     callsRemaining: number;
     expiresAt: string;
     status: string;
+    bookingUrl?: string;
+    recordingEnabled?: boolean;
   };
 }
 
-export default function TalkClientInterface({
-  token,
-  context,
-}: TalkClientInterfaceProps) {
+/** The Dograh widget is only used when a real widget URL is configured; otherwise the free in-browser agent runs. */
+function useDograh(): boolean {
+  const src = process.env.NEXT_PUBLIC_DOGRAH_WIDGET_SRC;
+  if (!src || src.includes('demo')) return false;
+  if (process.env.NEXT_PUBLIC_VOICE_PROVIDER === 'demo') return false;
+  return true;
+}
+
+export default function TalkClientInterface({ token, context }: TalkClientInterfaceProps) {
   const [consentChecked, setConsentChecked] = useState(false);
   const [language, setLanguage] = useState<string>(context.language || 'en');
   const [callState, setCallState] = useState<CallState>('idle');
@@ -47,34 +57,77 @@ export default function TalkClientInterface({
   const [optOutConfirmed, setOptOutConfirmed] = useState(false);
   const [optOutLoading, setOptOutLoading] = useState(false);
   const [showOptOutModal, setShowOptOutModal] = useState(false);
+  const [inputMode, setInputMode] = useState<InputMode>('text');
+  const [inputNote, setInputNote] = useState<string>('');
+  const [interim, setInterim] = useState('');
+  const [typed, setTyped] = useState('');
+  const [applied, setApplied] = useState<AgentApplied>({});
+  const [holding, setHolding] = useState(false);
 
-  const driverRef = useRef<DograhDriver | null>(null);
+  const dograh = useDograh();
+  const localDriverRef = useRef<LocalVoiceDriver | null>(null);
+  const dograhDriverRef = useRef<DograhDriver | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Tell the platform the link was opened (talk-link analytics).
+  useEffect(() => {
+    fetch(`/api/talk/${token}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'opened' }),
+    }).catch(() => undefined);
+  }, [token]);
 
   useEffect(() => {
-    const driver = new DograhDriver({
+    const common = {
       token,
       language,
-      onStateChange: (state, details) => {
+      onStateChange: (state: CallState, details?: string) => {
         setCallState(state);
-        if (details) setStatusMessage(details);
+        if (details !== undefined) setStatusMessage(details);
       },
-      onTranscriptTurn: (turn) => {
-        setTranscript((prev) => [...prev, turn]);
+      onTranscriptTurn: (turn: TranscriptTurn) => setTranscript((prev) => [...prev, turn]),
+      onCallComplete: (summary: string) => setCallSummary(summary),
+    };
+
+    if (dograh) {
+      const driver = new DograhDriver(common);
+      driver.loadScript();
+      dograhDriverRef.current = driver;
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        driver.endCall();
+      };
+    }
+
+    const driver = new LocalVoiceDriver({
+      ...common,
+      onInputMode: (mode, note) => {
+        setInputMode(mode);
+        setInputNote(note || '');
       },
-      onCallComplete: (summary) => {
-        setCallSummary(summary);
-      },
+      onInterim: setInterim,
+      onAgentApplied: (a) => setApplied((prev) => ({ ...prev, ...a })),
     });
-
-    driver.loadScript();
-    driverRef.current = driver;
-
+    localDriverRef.current = driver;
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      driver.endCall();
+      // React Strict Mode runs this cleanup once before the real mount; nothing is reported unless a call is active.
+      if (driver.isActive) driver.endCall();
+      else driver.dispose();
     };
-  }, [token, language]);
+    // language changes are pushed to the live driver below instead of re-creating it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, dograh]);
+
+  useEffect(() => {
+    localDriverRef.current?.setLanguage(language);
+  }, [language]);
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [transcript.length]);
 
   // Duration timer
   useEffect(() => {
@@ -94,6 +147,10 @@ export default function TalkClientInterface({
 
   const handleStartCall = async () => {
     if (!consentChecked) return;
+    setTranscript([]);
+    setCallSummary(null);
+    setApplied({});
+    setDuration(0);
 
     try {
       // Request fresh single-use call nonce
@@ -106,11 +163,11 @@ export default function TalkClientInterface({
         return;
       }
 
-      await driverRef.current?.startCall(
-        data.nonce,
-        context.leadFirstName,
-        context.companyName
-      );
+      if (dograh) {
+        await dograhDriverRef.current?.startCall(data.nonce, context.leadFirstName, context.companyName);
+      } else {
+        await localDriverRef.current?.startCall(data.nonce);
+      }
     } catch {
       setStatusMessage('Network connection failure. Please check your audio connection.');
       setCallState('error');
@@ -118,12 +175,39 @@ export default function TalkClientInterface({
   };
 
   const handleEndCall = () => {
-    driverRef.current?.endCall();
+    if (dograh) dograhDriverRef.current?.endCall();
+    else localDriverRef.current?.endCall();
+  };
+
+  const handleToggleMute = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    localDriverRef.current?.setMuted(next);
+  };
+
+  const handleSendTyped = async () => {
+    const text = typed.trim();
+    if (!text) return;
+    setTyped('');
+    await localDriverRef.current?.sendText(text);
+  };
+
+  const startHold = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    setHolding(true);
+    localDriverRef.current?.startRecording();
+  };
+  const endHold = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!holding) return;
+    setHolding(false);
+    localDriverRef.current?.stopRecording();
   };
 
   const handleOptOut = async () => {
     setOptOutLoading(true);
     try {
+      if (localDriverRef.current?.isActive) localDriverRef.current.dispose();
       await fetch(`/api/talk/${token}/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,7 +232,9 @@ export default function TalkClientInterface({
     return `${String(mins).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
   };
 
-  if (optOutConfirmed) {
+  const inCall = ['requesting_permission', 'connecting', 'connected', 'speaking', 'listening'].includes(callState);
+
+  if (optOutConfirmed || applied.opted_out) {
     return (
       <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 text-center shadow-2xl">
         <div className="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
@@ -156,12 +242,9 @@ export default function TalkClientInterface({
         </div>
         <h2 className="text-xl font-bold text-slate-100 mb-2">Unsubscribed & Suppressed</h2>
         <p className="text-sm text-slate-400 mb-6 leading-relaxed">
-          Your request has been registered in our National DND/TRAI compliance registry.
-          No further automated emails, WhatsApp messages, or phone calls will be initiated.
+          Your request has been registered in our National DND/TRAI compliance registry. No further automated emails, WhatsApp messages, or phone calls will be initiated.
         </p>
-        <p className="text-xs text-slate-500">
-          Reference Org: {context.orgName} • Compliance ID: DPDP-OPT-2026
-        </p>
+        <p className="text-xs text-slate-500">Reference Org: {context.orgName} • Compliance ID: DPDP-OPT-2026</p>
       </div>
     );
   }
@@ -171,9 +254,7 @@ export default function TalkClientInterface({
       {/* Header & Org Info */}
       <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-            {context.orgName}
-          </span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-blue-400">{context.orgName}</span>
           <h1 className="text-lg sm:text-xl font-bold text-slate-100 flex items-center gap-2">
             <span>{context.agentName}</span>
           </h1>
@@ -186,12 +267,9 @@ export default function TalkClientInterface({
 
       {/* Greeting Banner */}
       <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl p-4">
-        <p className="text-sm font-semibold text-slate-200">
-          Namaste, {context.leadFirstName}!
-        </p>
+        <p className="text-sm font-semibold text-slate-200">Namaste, {context.leadFirstName}!</p>
         <p className="text-xs text-slate-400 mt-0.5">
-          Exploring B2B sales automation solutions for{' '}
-          <span className="text-slate-300 font-medium">{context.companyName}</span>.
+          Exploring B2B sales automation solutions for <span className="text-slate-300 font-medium">{context.companyName}</span>.
         </p>
       </div>
 
@@ -199,16 +277,13 @@ export default function TalkClientInterface({
       <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-3 sm:p-4 text-xs text-amber-200/90 flex gap-3">
         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
         <div className="leading-relaxed">
-          <strong className="text-amber-300">Statutory AI Voice Disclosure:</strong> You are
-          speaking with an Artificial Intelligence SDR representative developed by {context.orgName}.
-          This conversation is processed and transcribed to service your sales enquiry.
+          <strong className="text-amber-300">Statutory AI Voice Disclosure:</strong> You are speaking with an Artificial Intelligence SDR representative developed by {context.orgName}. This conversation is processed and transcribed to service your sales enquiry.
         </div>
       </div>
 
       {/* Interactive Calling State */}
       {callState === 'idle' && (
         <div className="flex flex-col gap-4">
-          {/* Language selector */}
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Preferred Language:</span>
             <select
@@ -223,7 +298,6 @@ export default function TalkClientInterface({
             </select>
           </div>
 
-          {/* Consent Checkbox */}
           <label className="flex items-start gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -231,96 +305,102 @@ export default function TalkClientInterface({
               onChange={(e) => setConsentChecked(e.target.checked)}
               className="mt-0.5 w-4 h-4 text-blue-600 rounded bg-slate-800 border-slate-700 focus:ring-blue-500"
             />
-            <span className="text-xs text-slate-300 leading-normal">
-              I consent to speaking with an AI assistant and allow real-time call transcription for this session.
-            </span>
+            <span className="text-xs text-slate-300 leading-normal">I consent to speaking with an AI assistant and allow real-time call transcription for this session.</span>
           </label>
 
-          {/* Start Call CTA */}
           <button
             onClick={handleStartCall}
             disabled={!consentChecked}
             className={`w-full py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2.5 transition-all shadow-lg ${
-              consentChecked
-                ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25 cursor-pointer'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              consentChecked ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/25 cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed'
             }`}
           >
             <Mic className="w-5 h-5" />
             <span>Start Voice Call (WebRTC)</span>
           </button>
           <p className="text-[11px] text-center text-slate-500">
-            Zero carrier phone charges • Connects directly through your browser
+            Zero carrier phone charges • Connects directly through your browser • {context.callsRemaining} call{context.callsRemaining === 1 ? '' : 's'} remaining on this link
           </p>
         </div>
       )}
 
       {/* Active Call UI */}
-      {['requesting_permission', 'connecting', 'connected', 'speaking', 'listening'].includes(callState) && (
+      {inCall && (
         <div className="flex flex-col items-center gap-5 py-4">
-          {/* Animated Waveform & Status */}
           <div className="relative flex flex-col items-center">
             <div className="relative w-28 h-28 rounded-full flex items-center justify-center bg-gradient-to-tr from-blue-600/20 to-indigo-600/20 border border-blue-500/30">
-              <div
-                className={`absolute inset-0 rounded-full border-2 border-blue-500/40 ${
-                  callState === 'speaking' || callState === 'listening' ? 'animate-ping' : ''
-                }`}
-              />
-              <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/50">
-                <Volume2 className="w-8 h-8 animate-pulse" />
+              <div className={`absolute inset-0 rounded-full border-2 border-blue-500/40 ${callState === 'speaking' || callState === 'listening' ? 'animate-ping' : ''}`} />
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-xl ${callState === 'listening' ? 'bg-emerald-600 shadow-emerald-600/50' : 'bg-blue-600 shadow-blue-600/50'}`}>
+                {callState === 'listening' ? <Mic className="w-8 h-8 animate-pulse" /> : <Volume2 className="w-8 h-8 animate-pulse" />}
               </div>
             </div>
 
-            {/* Audio Waveform Bars */}
             <div className="flex items-center gap-1.5 mt-4 h-8">
               {[40, 75, 100, 60, 90, 45, 80, 55, 30].map((h, i) => (
                 <div
                   key={i}
-                  className={`w-1 bg-blue-400 rounded-full transition-all duration-150 ${
-                    callState === 'speaking' ? 'animate-pulse' : 'opacity-40'
-                  }`}
+                  className={`w-1 rounded-full transition-all duration-150 ${callState === 'listening' ? 'bg-emerald-400' : 'bg-blue-400'} ${callState === 'speaking' || callState === 'listening' ? 'animate-pulse' : 'opacity-40'}`}
                   style={{
-                    height:
-                      callState === 'speaking' || callState === 'listening'
-                        ? `${Math.max(12, (h * (isMuted ? 0.2 : 1)) / 3)}px`
-                        : '8px',
+                    height: callState === 'speaking' || callState === 'listening' ? `${Math.max(12, (h * (isMuted ? 0.2 : 1)) / 3)}px` : '8px',
                   }}
                 />
               ))}
             </div>
 
-            {/* Timer and Status text */}
             <div className="mt-3 text-center">
-              <div className="text-xl font-mono font-bold text-slate-100">
-                {formatTime(duration)}
+              <div className="text-xl font-mono font-bold text-slate-100">{formatTime(duration)}</div>
+              <div className="text-xs font-medium text-blue-400 mt-0.5" data-testid="call-status">
+                {callState === 'speaking' ? 'Apex AI is speaking...' : callState === 'listening' ? statusMessage || 'Listening to you...' : statusMessage || 'Connecting audio channel...'}
               </div>
-              <div className="text-xs font-medium text-blue-400 mt-0.5">
-                {callState === 'speaking'
-                  ? 'Apex AI is speaking...'
-                  : callState === 'listening'
-                  ? 'Listening to you...'
-                  : statusMessage || 'Connecting audio channel...'}
-              </div>
+              {interim && <div className="text-[11px] text-slate-400 mt-1 italic">“{interim}”</div>}
             </div>
           </div>
 
-          {/* In-Call Controls */}
-          <div className="flex items-center gap-4 mt-2">
+          {!dograh && (
+            <div className="w-full flex flex-col gap-2">
+              <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500">
+                {inputMode === 'speech' ? <Mic className="w-3 h-3" /> : inputMode === 'push' ? <Mic className="w-3 h-3" /> : <Keyboard className="w-3 h-3" />}
+                <span>{inputMode === 'speech' ? 'Voice: speak naturally' : inputMode === 'push' ? 'Voice: hold the mic button' : 'Text mode'}</span>
+                {inputNote && <span className="text-slate-600">· {inputNote}</span>}
+              </div>
+              {inputMode === 'push' && (
+                <button
+                  onMouseDown={startHold}
+                  onMouseUp={endHold}
+                  onMouseLeave={endHold}
+                  onTouchStart={startHold}
+                  onTouchEnd={endHold}
+                  className={`w-full py-3 rounded-xl text-sm font-semibold border transition-colors select-none ${holding ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-200'}`}
+                >
+                  {holding ? 'Recording… release to send' : 'Hold to talk'}
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendTyped()}
+                  placeholder="Type your reply instead…"
+                  className="flex-1 bg-slate-800 text-slate-100 border border-slate-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="typed-reply"
+                />
+                <button onClick={handleSendTyped} disabled={!typed.trim() || callState === 'speaking' || callState === 'connecting'} className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40" aria-label="Send typed reply">
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-4 mt-1">
             <button
-              onClick={() => setIsMuted(!isMuted)}
-              className={`p-3.5 rounded-full border transition-colors ${
-                isMuted
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
-                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-              }`}
+              onClick={handleToggleMute}
+              className={`p-3.5 rounded-full border transition-colors ${isMuted ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
             </button>
-            <button
-              onClick={handleEndCall}
-              className="py-3 px-6 bg-red-600 hover:bg-red-500 text-white rounded-full font-semibold text-sm flex items-center gap-2 shadow-lg shadow-red-600/30 transition-colors"
-            >
+            <button onClick={handleEndCall} className="py-3 px-6 bg-red-600 hover:bg-red-500 text-white rounded-full font-semibold text-sm flex items-center gap-2 shadow-lg shadow-red-600/30 transition-colors">
               <PhoneOff className="w-4 h-4" />
               <span>End Call</span>
             </button>
@@ -336,26 +416,49 @@ export default function TalkClientInterface({
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-100">Call Concluded</h3>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              {callSummary || 'Thank you for connecting with our AI representative.'}
-            </p>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{callSummary || 'Thank you for connecting with our AI representative.'}</p>
           </div>
+
+          {applied.meeting && (
+            <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-3 text-left text-xs" data-testid="meeting-booked">
+              <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" /> Meeting booked
+              </div>
+              <div className="text-slate-300 mt-1">
+                {new Date(applied.meeting.start_time).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST
+              </div>
+              <a href={applied.meeting.meet_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">
+                {applied.meeting.meet_url}
+              </a>
+            </div>
+          )}
+          {applied.task && (
+            <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-3 text-left text-xs">
+              <div className="font-semibold text-indigo-300 flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" /> A colleague from {context.orgName} will contact you within one business day.
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-2.5 mt-1">
-            <a
-              href="https://cal.com/apex-enterprise/discovery"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors shadow-md"
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Confirm 15-Min Meeting</span>
-            </a>
+            {!applied.meeting && context.bookingUrl && (
+              <a
+                href={context.bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition-colors shadow-md"
+              >
+                <Calendar className="w-4 h-4" />
+                <span>Confirm 15-Min Meeting</span>
+              </a>
+            )}
             <button
               onClick={() => {
                 setCallState('idle');
                 setTranscript([]);
                 setDuration(0);
                 setCallSummary(null);
+                setApplied({});
               }}
               className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-xs transition-colors"
             >
@@ -370,10 +473,7 @@ export default function TalkClientInterface({
         <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-4 text-xs text-red-300">
           <div className="font-semibold text-red-400 mb-1">Audio Connection Issue</div>
           <div>{statusMessage || 'Unable to establish WebRTC voice channel.'}</div>
-          <button
-            onClick={() => setCallState('idle')}
-            className="mt-3 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium"
-          >
+          <button onClick={() => setCallState('idle')} className="mt-3 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium">
             Try Again
           </button>
         </div>
@@ -394,28 +494,18 @@ export default function TalkClientInterface({
           </button>
 
           {isTranscriptOpen && (
-            <div className="p-3 max-h-48 overflow-y-auto space-y-2.5 text-xs">
+            <div className="p-3 max-h-48 overflow-y-auto space-y-2.5 text-xs" data-testid="transcript">
               {transcript.map((turn, i) => (
-                <div
-                  key={i}
-                  className={`flex flex-col ${turn.role === 'agent' ? 'items-start' : 'items-end'}`}
-                >
+                <div key={i} className={`flex flex-col ${turn.role === 'agent' ? 'items-start' : 'items-end'}`}>
                   <div className="text-[10px] text-slate-500 mb-0.5 flex items-center gap-1">
                     <span>{turn.role === 'agent' ? 'Apex AI' : context.leadFirstName}</span>
                     <span>•</span>
                     <span>{turn.time}</span>
                   </div>
-                  <div
-                    className={`px-3 py-2 rounded-xl max-w-[85%] leading-relaxed ${
-                      turn.role === 'agent'
-                        ? 'bg-slate-800 text-slate-200 border border-slate-700/60'
-                        : 'bg-blue-600 text-white'
-                    }`}
-                  >
-                    {turn.text}
-                  </div>
+                  <div className={`px-3 py-2 rounded-xl max-w-[85%] leading-relaxed ${turn.role === 'agent' ? 'bg-slate-800 text-slate-200 border border-slate-700/60' : 'bg-blue-600 text-white'}`}>{turn.text}</div>
                 </div>
               ))}
+              <div ref={transcriptEndRef} />
             </div>
           )}
         </div>
@@ -423,16 +513,10 @@ export default function TalkClientInterface({
 
       {/* Alternative Options & TRAI Footer */}
       <div className="border-t border-slate-800/80 pt-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500">
-        <a
-          href="mailto:outreach@apextech.in"
-          className="hover:text-slate-300 transition-colors"
-        >
+        <a href="mailto:outreach@apextech.in" className="hover:text-slate-300 transition-colors">
           Prefer to email? outreach@apextech.in
         </a>
-        <button
-          onClick={() => setShowOptOutModal(true)}
-          className="text-slate-400 hover:text-red-400 transition-colors underline decoration-slate-700"
-        >
+        <button onClick={() => setShowOptOutModal(true)} className="text-slate-400 hover:text-red-400 transition-colors underline decoration-slate-700">
           Opt out / Do Not Contact (TRAI/DND)
         </button>
       </div>
@@ -443,21 +527,13 @@ export default function TalkClientInterface({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 text-center shadow-2xl">
             <h3 className="text-base font-bold text-slate-100 mb-2">Confirm Opt-Out</h3>
             <p className="text-xs text-slate-400 mb-5 leading-relaxed">
-              We respect your privacy. Clicking confirm will permanently suppress your contact record
-              across Email, WhatsApp, and Voice communications under DPDP & TRAI regulations.
+              We respect your privacy. Clicking confirm will permanently suppress your contact record across Email, WhatsApp, and Voice communications under DPDP & TRAI regulations.
             </p>
             <div className="flex gap-2.5">
-              <button
-                onClick={() => setShowOptOutModal(false)}
-                className="flex-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors"
-              >
+              <button onClick={() => setShowOptOutModal(false)} className="flex-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={handleOptOut}
-                disabled={optOutLoading}
-                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded-lg transition-colors"
-              >
+              <button onClick={handleOptOut} disabled={optOutLoading} className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded-lg transition-colors">
                 {optOutLoading ? 'Processing...' : 'Confirm Opt-Out'}
               </button>
             </div>

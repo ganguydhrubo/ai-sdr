@@ -55,6 +55,7 @@ export default function WhatsAppHubPage() {
   );
   const [aiBrainResponse, setAiBrainResponse] = useState<string | null>(null);
   const [aiBrainIntent, setAiBrainIntent] = useState<string | null>(null);
+  const [aiBrainModel, setAiBrainModel] = useState<string | null>(null);
   const [isAiThinking, setIsAiThinking] = useState(false);
 
   // Function to load fresh QR from API
@@ -81,9 +82,20 @@ export default function WhatsAppHubPage() {
     }
   };
 
-  // Initial load
+  // Initial load: live QR + persisted anti-ban settings
   useEffect(() => {
     fetchQr();
+    fetch('/api/whatsapp/settings', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.antiBan) {
+          setMinDelay(data.antiBan.minDelaySeconds);
+          setMaxDelay(data.antiBan.maxDelaySeconds);
+          setAiVariation(!!data.antiBan.enableDynamicAiVariation);
+          setDailyLimit(data.antiBan.dailyLimit);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   // Poll status every 3.5s to automatically detect phone scan
@@ -132,9 +144,24 @@ export default function WhatsAppHubPage() {
     setTimeout(() => setCopiedCode(false), 2500);
   };
 
-  const handleSaveAntiBan = () => {
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
+  const handleSaveAntiBan = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minDelaySeconds: minDelay, maxDelaySeconds: maxDelay, enableDynamicAiVariation: aiVariation, dailyLimit }),
+      });
+      const data = await res.json();
+      if (data?.antiBan) {
+        setMinDelay(data.antiBan.minDelaySeconds);
+        setMaxDelay(data.antiBan.maxDelaySeconds);
+        setDailyLimit(data.antiBan.dailyLimit);
+      }
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch (err) {
+      console.error('Failed to save anti-ban settings:', err);
+    }
   };
 
   // Outbound dispatch test
@@ -155,7 +182,7 @@ export default function WhatsAppHubPage() {
         }),
       });
       const data = await res.json();
-      setDispatchResult(data.result);
+      setDispatchResult(data.result ? { ...data.result, note: data.note, deliveryMode: data.deliveryMode } : { success: false, error: data.error || 'Dispatch failed' });
     } catch (err: any) {
       setDispatchResult({ success: false, error: err.message });
     } finally {
@@ -183,6 +210,7 @@ export default function WhatsAppHubPage() {
       if (json.success && json.data) {
         setAiBrainIntent(json.data.intent);
         setAiBrainResponse(json.data.reply);
+        setAiBrainModel(json.model || null);
       }
     } catch (err: any) {
       setAiBrainIntent('OBJECTION_HANDLING');
@@ -531,10 +559,14 @@ export default function WhatsAppHubPage() {
                     <strong>AI Synthesized Text:</strong> &ldquo;{dispatchResult.dispatchedMessage}&rdquo;
                   </div>
                 )}
-                <div className="text-[10px] text-slate-500 flex items-center gap-3 pt-1">
+                {dispatchResult.error && <div className="text-[11px] break-words">{dispatchResult.error}</div>}
+                {dispatchResult.note && <div className="text-[11px] text-amber-800">{dispatchResult.note}</div>}
+                <div className="text-[10px] text-slate-500 flex items-center gap-3 pt-1 flex-wrap">
                   <span>Jitter Delay Applied: {dispatchResult.delayAppliedSeconds}s</span>
-                  <span>Engine: {dispatchResult.isRealEvolutionApi ? 'Evolution API (Docker)' : 'Safe Queue'}</span>
-                  <span>Message ID: {dispatchResult.messageId}</span>
+                  <span>Engine: {dispatchResult.simulated ? 'Simulator (nothing sent)' : dispatchResult.isRealEvolutionApi ? 'Evolution API (Docker)' : 'Evolution API'}</span>
+                  {dispatchResult.dispatchedTo && <span>To: {dispatchResult.dispatchedTo}</span>}
+                  {dispatchResult.messageId && <span>Message ID: {dispatchResult.messageId}</span>}
+                  {dispatchResult.deliveryMode && <span>Mode: {dispatchResult.deliveryMode}</span>}
                 </div>
               </div>
             )}
@@ -551,11 +583,11 @@ export default function WhatsAppHubPage() {
               Autonomous AI Brain: Inbound Conversation Intelligence
             </h2>
             <p className="text-xs text-slate-500">
-              When an Indian prospect sends a WhatsApp message, Groq Llama-3.3-70B classifies objections, queries sales playbooks, and replies consultatively.
+              When an Indian prospect sends a WhatsApp message, the AI brain (Groq GPT-OSS on the free tier, or the offline simulator) classifies objections, queries sales playbooks, and replies consultatively.
             </p>
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">
-            Real Model: Groq Llama-3.3-70B
+            Model: {aiBrainModel || 'resolved per call'}
           </span>
         </div>
 

@@ -6,22 +6,30 @@ import './globals.css';
 import { Sidebar } from '../components/layout/sidebar';
 import { Header } from '../components/layout/header';
 import { CommandPalette } from '../components/command-palette';
-import { getDemoStore } from '../lib/store/demo-store';
+import { useAppState } from '../lib/client/use-app-state';
+import { api } from '../lib/client/api';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
-  const store = getDemoStore();
-  const [killSwitchActive, setKillSwitchActive] = useState(store.org.emergency_kill_switch_active);
-
-  const handleToggleKillSwitch = () => {
-    const newState = store.toggleKillSwitch();
-    setKillSwitchActive(newState);
-  };
-
+  const pathname = usePathname();
   // Public, prospect-facing routes render without the admin shell (no sidebar/header),
   // so the talk page fits a 375px phone screen.
-  const pathname = usePathname();
   const isPublicRoute = !!pathname && pathname.startsWith('/talk/');
+
+  // The shell polls the server snapshot slowly so kill-switch / queue changes made elsewhere
+  // (another tab, n8n, the public talk page) show up without a reload.
+  const { state, refresh } = useAppState({ pollMs: isPublicRoute ? 0 : 30_000 });
+  const [toggling, setToggling] = useState(false);
+
+  const handleToggleKillSwitch = async () => {
+    setToggling(true);
+    try {
+      await api.post('/api/settings/kill-switch');
+      await refresh();
+    } finally {
+      setToggling(false);
+    }
+  };
 
   if (isPublicRoute) {
     return (
@@ -41,28 +49,37 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <title>ApexSDR - Enterprise AI SDR Platform (India B2B)</title>
         <meta name="description" content="Autonomous AI SDR Operating System for Indian B2B Organizations" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body className="flex h-screen overflow-hidden bg-slate-50 text-slate-900 antialiased">
         {/* Left Navigation Sidebar */}
-        <Sidebar />
+        <Sidebar org={state?.org} stats={state?.stats} />
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
           {/* Top Header */}
           <Header
             onOpenCommandPalette={() => setIsCommandOpen(true)}
-            killSwitchActive={killSwitchActive}
+            killSwitchActive={!!state?.org.emergency_kill_switch_active}
             onToggleKillSwitch={handleToggleKillSwitch}
+            toggling={toggling}
+            integrations={state?.integrations}
+            orgName={state?.org.name}
+            user={state?.users.find((u) => u.role === 'SALES_MANAGER')}
           />
 
           {/* Page Body */}
-          <main className="flex-1 overflow-y-auto p-6">
-            {children}
-          </main>
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
         </div>
 
         {/* Global Command Palette */}
-        <CommandPalette isOpen={isCommandOpen} onClose={() => setIsCommandOpen(false)} />
+        <CommandPalette
+          isOpen={isCommandOpen}
+          onOpen={() => setIsCommandOpen(true)}
+          onClose={() => setIsCommandOpen(false)}
+          leads={state?.leads || []}
+          campaigns={state?.campaigns || []}
+        />
       </body>
     </html>
   );

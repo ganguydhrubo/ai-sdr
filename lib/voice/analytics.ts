@@ -62,8 +62,5 @@ export function computeVoiceAnalytics(
   };
 }
 
-export function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
-}
+// Kept for existing imports; the implementation lives in the client-safe format module.
+export { formatDuration } from '../client/format';

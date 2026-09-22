@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Users,
-  Building2,
   Send,
   MessageSquare,
   Calendar,
@@ -19,6 +18,9 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import type { Organization } from '../../lib/types';
+import type { AppStats } from '../../lib/state-types';
+import { formatInr, usdToInr } from '../../lib/client/format';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -34,11 +36,19 @@ const NAV_ITEMS = [
   { label: 'Admin & Guardrails', href: '/settings', icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ org, stats }: { org?: Organization; stats?: AppStats }) {
   const pathname = usePathname();
+  const spentInr = usdToInr(org?.ai_budget_spent_current_month || 0);
+  const budgetInr = usdToInr(org?.monthly_ai_budget || 0);
+  const pct = budgetInr > 0 ? Math.min(100, Math.round((spentInr / budgetInr) * 100)) : 0;
+  const counts: Record<string, number | undefined> = {
+    '/': stats?.pendingApprovals,
+    '/tasks': stats?.pendingTasks,
+    '/inbox': undefined,
+  };
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col h-screen border-r border-slate-800 flex-shrink-0">
+    <aside className="w-64 bg-slate-900 text-slate-100 hidden md:flex flex-col h-screen border-r border-slate-800 flex-shrink-0">
       {/* Brand Header */}
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -64,16 +74,15 @@ export function Sidebar() {
         </div>
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+          const isActive = pathname === item.href || (item.href !== '/' && !!pathname?.startsWith(item.href));
+          const count = counts[item.href];
           return (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
                 'flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               )}
             >
               <div className="flex items-center gap-3">
@@ -85,6 +94,11 @@ export function Sidebar() {
                   {item.badge}
                 </span>
               )}
+              {!item.badge && !!count && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {count}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -94,18 +108,20 @@ export function Sidebar() {
       <div className="p-3 border-t border-slate-800 bg-slate-950/40">
         <div className="bg-slate-800/60 rounded-lg p-2.5 border border-slate-700/50">
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400">Monthly AI Budget</span>
-            <span className="font-semibold text-slate-200">₹2,380 / ₹41,500</span>
+            <span className="text-slate-400">AI spend (list price)</span>
+            <span className="font-semibold text-slate-200">
+              {formatInr(spentInr)} / {formatInr(budgetInr)}
+            </span>
           </div>
           <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-            <div className="bg-emerald-500 h-full w-[6%] rounded-full" />
+            <div className={clsx('h-full rounded-full', pct > 90 ? 'bg-rose-500' : 'bg-emerald-500')} style={{ width: `${Math.max(2, pct)}%` }} />
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
             <span className="flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-emerald-400" />
-              Guardrails Active
+              <ShieldCheck className={clsx('w-3 h-3', org?.emergency_kill_switch_active ? 'text-rose-400' : 'text-emerald-400')} />
+              {org?.emergency_kill_switch_active ? 'Outreach halted' : 'Guardrails active'}
             </span>
-            <span className="text-emerald-400 font-medium">99.8% OK</span>
+            <span className="text-emerald-400 font-medium">Free tier · ₹0 billed</span>
           </div>
         </div>
       </div>

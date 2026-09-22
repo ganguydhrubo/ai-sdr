@@ -37,3 +37,6 @@ supabase/.temp/
 /playwright-report/
 /test-results/
 /playwright/.auth/
+
+# Local JSON persistence of the in-memory store
+/.data/

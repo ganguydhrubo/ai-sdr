@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveTalkToken, revokeTalkToken } from '@/lib/voice/talk-links';
+import { revokeTalkToken, hashToken } from '@/lib/voice/talk-links';
 import { getDemoStore } from '@/lib/store/demo-store';
 import { getSupabaseClient } from '@/lib/supabase';
 import { ComplianceGuard } from '@/lib/compliance/guard';
+import { completeLocalCall } from '@/lib/voice/agent';
+import type { TalkSession } from '@/lib/types';
+
+export const dynamic = 'force-dynamic';
+
+/** Finds the session for a token without the max-calls check (events arrive mid-call). */
+function findSession(token: string): TalkSession | undefined {
+  const store = getDemoStore();
+  const hash = hashToken(token);
+  return store.findTalkSessionByTokenHash(hash) || store.getTalkSessions().find((s) => s.token === token);
+}
 
 export async function POST(
   req: NextRequest,
@@ -11,11 +22,10 @@ export async function POST(
   try {
     const { token } = params;
     const body = await req.json().catch(() => ({}));
-    const { event, details, durationSeconds, reason } = body;
+    const { event, details, durationSeconds, reason, transcript, language, actions } = body;
 
-    const tokenRes = await resolveTalkToken(token);
     const store = getDemoStore();
-    const session = tokenRes.session;
+    const session = findSession(token);
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -24,9 +34,30 @@ export async function POST(
     const supabase = getSupabaseClient();
 
     switch (event) {
+      case 'opened': {
+        if (['CREATED', 'SENT'].includes(session.status)) {
+          session.status = 'OPENED';
+          session.opened_at = session.opened_at || new Date().toISOString();
+        }
+        session.last_opened_at = new Date().toISOString();
+        if (supabase) {
+          try {
+            await supabase.from('talk_sessions').update({ status: session.status, opened_at: session.opened_at, last_opened_at: session.last_opened_at }).eq('id', session.id);
+          } catch {
+            // fallback
+          }
+        }
+        store.persist();
+        break;
+      }
+
       case 'call_started': {
+        if (session.status === 'REVOKED' || session.status === 'EXPIRED') {
+          return NextResponse.json({ error: `Talk session is ${session.status.toLowerCase()}` }, { status: 403 });
+        }
         session.call_count = (session.call_count || 0) + 1;
         session.status = 'CALL_STARTED';
+        session.opened_at = session.opened_at || new Date().toISOString();
         store.recordAuditLog(
           'USER',
           'VOICE_CALL_STARTED',
@@ -52,7 +83,29 @@ export async function POST(
       }
 
       case 'call_completed': {
-        session.status = 'COMPLETED';
+        if (Array.isArray(transcript) && transcript.length > 0) {
+          // In-browser agent call: record transcript, extraction and outcomes.
+          const call = await completeLocalCall({
+            session,
+            transcript: transcript
+              .filter((t: { role?: string; text?: string }) => (t.role === 'agent' || t.role === 'user') && typeof t.text === 'string')
+              .map((t: { role: 'agent' | 'user'; text: string }) => ({ role: t.role, text: t.text })),
+            durationSeconds: Number(durationSeconds) || 0,
+            language,
+            actions,
+          });
+          if (supabase) {
+            try {
+              await supabase.from('talk_sessions').update({ status: session.status }).eq('id', session.id);
+              await supabase.from('voice_calls').upsert({ ...call });
+            } catch {
+              // fallback
+            }
+          }
+          return NextResponse.json({ success: true, call_id: call.id, intent: call.intent, summary: call.extracted?.summary });
+        }
+
+        if (session.status !== 'REVOKED') session.status = 'COMPLETED';
         store.recordAuditLog(
           'AI_AGENT',
           'VOICE_CALL_COMPLETED',
@@ -78,13 +131,15 @@ export async function POST(
         if (lead) {
           lead.is_suppressed = true;
           lead.suppression_reason = reason || 'Prospect opted out via talk landing page';
+          lead.status = 'DISQUALIFIED';
+          lead.updated_at = new Date().toISOString();
           ComplianceGuard.addSuppression({
             email: lead.email,
             phone: lead.phone,
             reason: 'DO_NOT_CONTACT',
           });
         }
-        await revokeTalkToken(token, reason || 'Prospect 1-click opt-out on talk page');
+        await revokeTalkToken(session.token_hash, reason || 'Prospect 1-click opt-out on talk page');
         store.recordAuditLog(
           'USER',
           'PROSPECT_OPTED_OUT',
@@ -110,6 +165,7 @@ export async function POST(
         break;
     }
 
+    store.persist();
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(

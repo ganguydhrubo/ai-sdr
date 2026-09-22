@@ -1,46 +1,50 @@
-# Voice Module — Status (2026-09-22, end of session)
+# Platform Status (2026-09-22, evening) — "all features working, free stack"
 
-Picks up from the "Voice Module — End-to-End Handoff & Next Steps" note of 2026-09-22.
-All eight items of its recommended order of work are done; each landed as its own commit with
+Supersedes the voice-only status note of the same morning. Trigger: after the voice handoff the app was
+still "not working" end to end. Root cause and what changed are below; every item landed with
 `npm run lint && npm run typecheck && npm run test && npm run build` green.
 
-## Delivered this session
+## Root cause of "still not working"
 
-| Phase | What | Where | Tests |
-|---|---|---|---|
-| Webhook route (gap #1) | `POST /api/voice/webhooks/dograh` — raw-body secret/HMAC check, Zod validation, `provider.processWebhook()`; both providers now update the row keyed by `provider_run_id` (idempotent, duplicate deliveries flagged, side effects not re-run) | `app/api/voice/webhooks/dograh/route.ts`, `lib/voice/{dograh,demo,provider}.ts` | `tests/voice-webhook.test.ts` (7) |
-| V8 script | Versioned Dograh agent instructions + loader/renderer | `lib/voice/prompts/sdr-talk-agent.md`, `lib/voice/prompts/index.ts` | `tests/voice-script.test.ts` (4) |
-| V6 outreach | `TALK_INVITE` step type, `{{talk_link}}`/`{{talk_link_expires}}` variables, seeded steps per campaign, `dispatchTalkInvite()`, `SDROrchestrator.executeCampaignStep()`, `POST /api/voice/talk-invite`, `POST /api/campaigns/steps/execute`, campaigns page renders real steps | `lib/orchestrator/talk-invite.ts`, `lib/outreach/templates.ts`, `lib/store/campaign-steps.ts` | `tests/voice-talk-invite.test.ts` (8) |
-| V9 settings UI | `/settings/voice` with the eight-point gate, "Provider cost not included" banner, `GET/PUT /api/voice/settings` (PSTN cannot be enabled while the gate fails) | `app/settings/voice/page.tsx`, `lib/voice/compliance.ts#evaluatePstnGate` | `tests/voice-settings.test.ts` (6) |
-| V7 n8n | Four workflow exports + generator; app endpoints `GET /api/voice/talk-sessions`, `POST /api/voice/talk-sessions/expire`, `GET /api/voice/calls`; reminder support (`reminder_for_session_id`); outbound post-call hand-off (`N8N_POST_CALL_WEBHOOK_URL`) | `n8n/workflows/*.json`, `lib/voice/{sessions,notify}.ts` | `tests/voice-workflows.test.ts` (8) |
-| V8 docs | Setup runbook, hosting README, README pointers | `docs/voice/DOGRAH_SETUP.md`, `infra/dograh/README.md` | — |
-| V10 analytics | Dashboard voice row + `GET /api/voice/analytics` | `lib/voice/analytics.ts`, `app/page.tsx` | `tests/voice-analytics.test.ts` (4) |
-| V11 browser | Playwright, mobile-375 + desktop projects, 10 scenarios | `playwright.config.ts`, `tests/e2e/voice-module.e2e.ts` | `npm run test:e2e` (10/10) |
+Every admin page was a `'use client'` component that instantiated **its own copy** of the in-memory
+store in the browser, while the API routes used a **separate** server copy. Minting a talk link,
+toggling the kill switch, adding suppressions, approving drafts — each wrote to one copy and read from
+another, and a page reload discarded everything. Approve & Send never dispatched anything; the AI runs
+were never recorded; the dashboard funnel, budget and "Just now" labels were hard-coded.
 
-Vitest: 44 → 81 tests. Playwright: 10 e2e tests (new).
+## What changed
 
-## Defects found and fixed along the way
+| Area | Now | Where |
+|---|---|---|
+| Source of truth | Server store persisted to `.data/apex-store.json` (debounced atomic writes, cap on audit/AI-run history, `Reset demo data`) | `lib/store/persistence.ts`, `lib/store/demo-store.ts` |
+| UI data flow | One snapshot `GET /api/state`; every action is an API route; shared `useAppState()` hook with slow polling | `app/api/state`, `lib/client/*`, all `app/**/page.tsx` |
+| Delivery | Approve → `approveAndDispatch()` → Resend / Evolution API / simulator with a `DeliveryReceipt` on the message; delivery modes SIMULATED · LIVE_REDIRECT · LIVE; queue flush; honest FAILED + Retry | `lib/outreach/dispatch.ts`, Settings page |
+| AI | Tracked provider records every call (tokens, list-price cost, latency, model) + budget circuit breaker; Groq free-tier model chain; ICP weights from Settings feed the scoring prompt; industry inferred from company name for bare leads | `lib/ai/tracked.ts`, `lib/ai/groq.ts`, `lib/orchestrator/sdr-orchestrator.ts` |
+| Conversations | Inbound reply → classification → handoff task → AI reply **drafted** (sent automatically only when "Autonomous replies" is on); human replies delivered over the channel | `/api/leads/[id]/reply`, `/api/conversations/[id]/*` |
+| Leads | Validated creation, +91/email normalisation, duplicate detection, CSV import (file/paste/sample), suppress/unsuppress, status changes, notes | `lib/leads/*`, `/api/leads*` |
+| Campaigns | Create with a default 4-touch sequence, enrol leads (step 1 runs immediately), run any step for a lead, pause/resume, toggle steps | `lib/orchestrator/campaigns.ts`, `/api/campaigns*` |
+| Meetings | Free Jitsi rooms, `.ics` download/email invite, reschedule/complete/cancel, AI brief | `lib/meetings/service.ts`, `lib/adapters/calendar.ts` |
+| Voice | **Free in-browser agent** on `/talk/[token]`: Web Speech API → push-to-talk (Groq Whisper) → typing fallbacks; GPT-OSS on the versioned script; browser TTS (optional Groq Orpheus); books meetings / hands off / opt-outs (EN/HI/BN) live; call recorded with transcript + extraction | `app/talk/[token]/local-voice-driver.ts`, `lib/voice/agent.ts`, `/api/talk/[token]/{agent,transcribe,speak,events}` |
+| Voice Hub | Mint links (manual / email / WhatsApp), copy/QR/revoke, real analytics, gated PSTN dialer with the 8-point reasons | `app/voice/page.tsx`, `/api/voice/{talk-links,dial}` |
+| Settings | Delivery mode + test recipients, autonomous replies, AI budget, ICP matrix + minimum score, suppression add/remove, live integration health, reset | `app/settings/page.tsx`, `/api/settings*`, `lib/integrations/status.ts` |
 
-1. **Talk page rendered inside the admin shell** — at 375px the sidebar consumed the screen and the
-   call card was pushed off-screen. `app/layout.tsx` now renders `/talk/*` standalone. (Found by V11.)
-2. **`DograhDriver.endCall()` ended a call that never started** — React Strict Mode's effect cleanup
-   put the page straight into "Call Concluded" and posted a bogus `call_completed` event. It is now
-   a no-op unless a call is active. (Found by V11.)
-3. **Kill switch did not reach the ComplianceGuard** — the UI toggled only the org flag; every
-   outbound gate reads the guard's static flag. `toggleKillSwitch()` now sets both. (Found by V9 tests.)
-4. **`addTalkSession` dropped `sent_at`/`opened_at`/`campaign_step_id`** — needed by reminders/expiry.
+## Verified in the browser (dev server, DEMO_MODE=false, live Groq)
+
+1. Approve in LIVE mode → real Resend call → HTTP 403 (free tier, unverified domain) surfaced with Retry.
+2. Settings → SIMULATED → Retry → sent (simulated), lead CONTACTED, audit trail complete.
+3. Add lead → live scoring (80/100 after the industry-inference fix) → GPT-OSS drafted email → approved.
+4. Reply lab → INTERESTED, handoff task, AI draft → sent. Book meeting → Jitsi room + brief + invite.
+5. Mint talk link → talk page → call (mic blocked in the pane → text mode) → agent booked the meeting and
+   closed the call → `vc_local_*` recorded with transcript, extraction and linked meeting; analytics updated.
+6. Every other page (campaigns, inbox, pipeline, tasks, meetings, activity, WhatsApp Hub with a live
+   Baileys QR) loads from the server without runtime errors.
+
+Tests: 106 vitest (20 files), Playwright voice + admin-flow suites.
 
 ## Still open (needs a person)
 
-- Push: the branch is now 13 commits ahead of `origin/main` — still not pushed (the handoff's open question).
-- A real Dograh workspace: everything runs in `VOICE_PROVIDER=demo`; the runbook lists exactly what to configure.
-- Vobiz SIP trunk commercial owner — a prerequisite for the PSTN gate's caller-ID and OAP items.
-- Persistence: the app still runs on the in-memory demo store; Supabase writes are best-effort (`upsert` inside try/catch).
-- The admin shell is not responsive below ~1024px (unchanged; outside the voice spec, but worth a ticket).
-
-## How to verify quickly
-
-```bash
-npm run lint && npm run typecheck && npm run test && npm run build   # 81 vitest tests
-npm run test:e2e                                                      # 10 Playwright tests, 375px + desktop
-```
+- Resend: verify a domain, or use LIVE_REDIRECT with the account's own email (the only free-tier recipient).
+- WhatsApp: scan the QR once (Evolution API instance `apex_sales_01` is `close`); then LIVE / LIVE_REDIRECT sends are real.
+- Supabase: migrations 001/002 are not applied (tables 404); the JSON store is the source of truth regardless.
+- Real Dograh workspace + Vobiz SIP trunk owner — unchanged from the morning note (PSTN gate items).
+- Admin shell below ~768px hides the sidebar (mobile nav not built); the public talk page is mobile-first.

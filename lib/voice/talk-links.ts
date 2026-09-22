@@ -48,6 +48,8 @@ export async function mintTalkToken(params: MintTalkTokenParams): Promise<MintTa
     campaign_id: params.campaignId,
     channel: params.channel || 'email',
     token_hash: tokenHash,
+    // The raw token stays in the local store so operators can copy/re-send the link (not sent to Supabase).
+    token,
     status: 'CREATED',
     expires_at: expiresAt,
     max_calls: params.maxCalls ?? 3,

@@ -52,6 +52,15 @@ export type ConversationIntent =
   | 'POSITIVE_UNKNOWN'
   | 'NEGATIVE_UNKNOWN';
 
+/**
+ * How outbound messages leave the platform once approved.
+ * SIMULATED     — nothing leaves the machine; the message is marked sent by the demo adapter.
+ * LIVE          — real Resend / Evolution API delivery to the prospect's address.
+ * LIVE_REDIRECT — real delivery, but every message goes to the organisation's test inbox/phone
+ *                 (safe end-to-end testing on free tiers without contacting real prospects).
+ */
+export type DeliveryMode = 'SIMULATED' | 'LIVE' | 'LIVE_REDIRECT';
+
 export interface Organization {
   id: string;
   name: string;
@@ -69,6 +78,9 @@ export interface Organization {
   ai_budget_spent_current_month: number;
   is_autonomous_outreach_enabled: boolean;
   emergency_kill_switch_active: boolean;
+  delivery_mode: DeliveryMode;
+  outbound_test_email?: string;
+  outbound_test_phone?: string;
   created_at: string;
 }
 
@@ -153,6 +165,9 @@ export interface Lead {
   score?: LeadScore;
   company?: Company;
   research?: VerifiedFact[];
+  /** AI sales brief generated for the account executive (Lead 360 → AI Sales Brief). */
+  sales_brief?: AISalesBrief;
+  sales_brief_generated_at?: string;
 }
 
 export interface LeadScore {
@@ -205,6 +220,8 @@ export interface Campaign {
   open_rate?: number;
   reply_rate?: number;
   positive_reply_rate?: number;
+  /** Leads enrolled through the Campaigns page (seeded campaigns start with none). */
+  enrolled_lead_ids?: string[];
   created_at: string;
 }
 
@@ -234,6 +251,16 @@ export interface CampaignStep {
   talk_link_max_calls?: number;
 }
 
+/** What actually happened when an outbound message was handed to a channel provider. */
+export interface DeliveryReceipt {
+  provider: string;
+  simulated: boolean;
+  redirected_to?: string;
+  provider_message_id?: string;
+  error?: string;
+  attempted_at: string;
+}
+
 export interface OutboundMessage {
   id: string;
   organization_id: string;
@@ -258,6 +285,8 @@ export interface OutboundMessage {
   delivered_at?: string;
   replied_at?: string;
   error_message?: string;
+  delivery?: DeliveryReceipt;
+  attempts?: number;
   created_at: string;
 }
 
@@ -268,6 +297,9 @@ export interface ConversationMessage {
   sender_name?: string;
   content: string;
   intent_detected?: ConversationIntent;
+  delivery?: DeliveryReceipt;
+  /** AI drafts start as DRAFT until a human (or the autonomous switch) sends them. Seeded/legacy rows have none. */
+  delivery_status?: 'DRAFT' | 'SENT' | 'FAILED';
   created_at: string;
 }
 
@@ -318,6 +350,9 @@ export interface Meeting {
   calendar_provider: string;
   status: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED';
   sales_brief?: AISalesBrief;
+  /** Set when the AI voice agent booked the meeting during a talk-link call. */
+  talk_session_id?: string;
+  invite_sent_at?: string;
   created_at: string;
 }
 
@@ -334,6 +369,7 @@ export interface Task {
   due_date?: string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   created_by_ai: boolean;
+  completed_at?: string;
   created_at: string;
 }
 
@@ -367,6 +403,26 @@ export interface AIRun {
   created_at: string;
 }
 
+/** Which specialised prompt an AI call carries — lets the offline provider answer in the right shape. */
+export type AITask =
+  | 'score'
+  | 'intent'
+  | 'outreach'
+  | 'brief'
+  | 'reply'
+  | 'voice_turn'
+  | 'voice_extract'
+  | 'whatsapp_variation'
+  | 'whatsapp_reply';
+
+export interface WhatsAppAntiBanSettings {
+  minDelaySeconds: number; // e.g. 15
+  maxDelaySeconds: number; // e.g. 45
+  enableDynamicAiVariation: boolean; // Unique LLM re-phrasing per send
+  dailyLimit: number; // Warm-up limit e.g. 35/day
+  sentToday: number;
+}
+
 // ==============================================================================
 // PHASE 8: VOICE MODULE TYPES
 // ==============================================================================
@@ -390,7 +446,8 @@ export interface TalkSession {
   campaign_step_id?: string;
   channel: 'email' | 'whatsapp' | 'sms' | 'manual';
   token_hash: string;
-  token?: string; // Only present upon immediate generation
+  /** Kept in the local store so operators can copy/re-send the link; never written to Supabase. */
+  token?: string;
   status: TalkSessionStatus;
   expires_at: string;
   max_calls: number;
@@ -418,7 +475,8 @@ export interface TalkCallNonce {
 }
 
 export type VoiceCallMode = 'webrtc' | 'pstn';
-export type VoiceCallProvider = 'demo' | 'dograh';
+/** local = the free in-browser agent (Web Speech / Groq Whisper + LLM + TTS) shipped with the app. */
+export type VoiceCallProvider = 'demo' | 'dograh' | 'local';
 export type VoiceCallStatus =
   | 'INITIATED'
   | 'CONNECTED'
@@ -491,4 +549,3 @@ export interface VoiceSettings {
   recording_enabled: boolean;
   human_booking_url?: string;
 }
-

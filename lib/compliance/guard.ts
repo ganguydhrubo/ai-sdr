@@ -1,4 +1,4 @@
-import { OutboundMessage, Channel } from '../types';
+import { Channel } from '../types';
 
 export interface ComplianceCheckResult {
   allowed: boolean;
@@ -12,6 +12,7 @@ export interface SuppressionEntry {
   phone?: string;
   domain?: string;
   reason: 'UNSUBSCRIBED' | 'DO_NOT_CONTACT' | 'BOUNCE' | 'COMPLAINT' | 'MANUAL_BLOCK';
+  added_at?: string;
 }
 
 // Banned or high-risk claims under enterprise SDR policy
@@ -35,13 +36,19 @@ const PROMPT_INJECTION_PATTERNS = [
   /<script>/i,
 ];
 
+export const DEFAULT_SUPPRESSION_LIST: SuppressionEntry[] = [
+  { email: 'optout@competitor.com', reason: 'UNSUBSCRIBED' },
+  { phone: '+919800000000', reason: 'DO_NOT_CONTACT' },
+  { domain: 'blacklisted-domain.com', reason: 'BOUNCE' },
+];
+
+function cleanPhone(phone?: string): string | undefined {
+  return phone?.replace(/[^\d+]/g, '') || undefined;
+}
+
 export class ComplianceGuard {
   private static emergencyKillSwitchActive = false;
-  private static suppressionList: SuppressionEntry[] = [
-    { email: 'optout@competitor.com', reason: 'UNSUBSCRIBED' },
-    { phone: '+919800000000', reason: 'DO_NOT_CONTACT' },
-    { domain: 'blacklisted-domain.com', reason: 'BOUNCE' },
-  ];
+  private static suppressionList: SuppressionEntry[] = DEFAULT_SUPPRESSION_LIST.map((e) => ({ ...e }));
 
   // Daily send counter for rate limiting
   private static dailySendsByDomain: Record<string, number> = {};
@@ -64,14 +71,64 @@ export class ComplianceGuard {
   }
 
   /**
-   * Adds an identifier to the global suppression list
+   * Adds an identifier to the global suppression list (idempotent per identifier).
    */
-  public static addSuppression(entry: SuppressionEntry): void {
-    this.suppressionList.push(entry);
+  public static addSuppression(entry: SuppressionEntry): SuppressionEntry {
+    const normalized: SuppressionEntry = {
+      email: entry.email?.trim().toLowerCase() || undefined,
+      phone: cleanPhone(entry.phone),
+      domain: entry.domain?.trim().toLowerCase() || undefined,
+      reason: entry.reason,
+      added_at: entry.added_at || new Date().toISOString(),
+    };
+    const existing = this.suppressionList.find(
+      (s) =>
+        (!!normalized.email && s.email === normalized.email) ||
+        (!!normalized.phone && !!s.phone && cleanPhone(s.phone) === normalized.phone) ||
+        (!!normalized.domain && s.domain === normalized.domain)
+    );
+    if (existing) {
+      // Merge so one entry can cover email + phone for the same prospect.
+      existing.email = existing.email || normalized.email;
+      existing.phone = existing.phone || normalized.phone;
+      existing.domain = existing.domain || normalized.domain;
+      existing.reason = normalized.reason;
+      return existing;
+    }
+    this.suppressionList.push(normalized);
+    return normalized;
+  }
+
+  /** Removes every entry matching the identifier (email, phone or domain). Returns how many were removed. */
+  public static removeSuppression(identifier: string): number {
+    const value = identifier.trim().toLowerCase();
+    const phone = cleanPhone(identifier);
+    const before = this.suppressionList.length;
+    this.suppressionList = this.suppressionList.filter(
+      (s) => !(s.email === value || s.domain === value || (!!phone && !!s.phone && cleanPhone(s.phone) === phone))
+    );
+    return before - this.suppressionList.length;
   }
 
   public static getSuppressionList(): SuppressionEntry[] {
-    return [...this.suppressionList];
+    return this.suppressionList.map((e) => ({ ...e }));
+  }
+
+  /** Replaces the whole list (used when the persisted store is loaded). */
+  public static setSuppressionList(entries: SuppressionEntry[]): void {
+    this.suppressionList = entries.map((e) => ({ ...e }));
+  }
+
+  /** Back to the seed state (used by "Reset demo data"). */
+  public static resetToDefaults(): void {
+    this.emergencyKillSwitchActive = false;
+    this.suppressionList = DEFAULT_SUPPRESSION_LIST.map((e) => ({ ...e }));
+    this.dailySendsByDomain = {};
+    this.dailySendsByChannel = { EMAIL: 0, WHATSAPP: 0, VOICE: 0, LINKEDIN: 0 };
+  }
+
+  public static getDailySends(): Record<Channel, number> {
+    return { ...this.dailySendsByChannel };
   }
 
   /**
@@ -79,14 +136,14 @@ export class ComplianceGuard {
    */
   public static isSuppressed(email?: string, phone?: string, domain?: string): { suppressed: boolean; reason?: string } {
     const cleanEmail = email?.trim().toLowerCase();
-    const cleanPhone = phone?.replace(/[^\d+]/g, '');
+    const cleanedPhone = cleanPhone(phone);
     const cleanDomain = domain?.trim().toLowerCase();
 
     for (const item of this.suppressionList) {
       if (cleanEmail && item.email && cleanEmail === item.email.toLowerCase()) {
         return { suppressed: true, reason: `Email is on suppression list: ${item.reason}` };
       }
-      if (cleanPhone && item.phone && cleanPhone === item.phone.replace(/[^\d+]/g, '')) {
+      if (cleanedPhone && item.phone && cleanedPhone === cleanPhone(item.phone)) {
         return { suppressed: true, reason: `Phone is on suppression list: ${item.reason}` };
       }
       if (cleanDomain && item.domain && cleanDomain === item.domain.toLowerCase()) {

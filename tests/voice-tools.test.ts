@@ -90,7 +90,7 @@ describe('In-Call Voice Agent Tools (Phase V5)', () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.meeting_id).toBeDefined();
-    expect(json.meet_link).toContain('https://meet.google.com/');
+    expect(json.meet_link).toMatch(/^https:\/\/meet\.jit\.si\/ApexSDR-/); // free Jitsi room, no account needed
     expect(lead.status).toBe('MEETING');
   });
 

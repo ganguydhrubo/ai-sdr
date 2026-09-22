@@ -3,7 +3,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38bdf8.svg)](https://tailwindcss.com/)
-[![Groq](https://img.shields.io/badge/Groq-Llama--3.3--70B-orange.svg)](https://groq.com/)
+[![Groq](https://img.shields.io/badge/Groq-GPT--OSS--120B%20(free%20tier)-orange.svg)](https://groq.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 An enterprise-grade **Autonomous AI Sales Development Representative (SDR) Platform** tailored specifically for Indian B2B enterprises, manufacturing firms, SaaS companies, IT services, and logistics distributors.
@@ -34,13 +34,46 @@ AI Sales Brief Generation & Kanban CRM Pipeline Update
 
 ---
 
+## 🆓 Runs 100% free — the working stack (2026-09-22)
+
+Every feature of the app works end-to-end on free tiers and self-hosted pieces; nothing is billed.
+
+| Capability | How it works now | Cost |
+| :--- | :--- | :--- |
+| Source of truth | **Server-side store** (`lib/store/demo-store.ts`) persisted as JSON to `.data/apex-store.json` on every change; survives restarts. Pages never keep their own copy — they render `GET /api/state` and call mutation routes. | ₹0 |
+| AI brain (13 agents) | Groq free tier, `openai/gpt-oss-120b` with automatic fallback to `gpt-oss-20b` / `qwen3.8-27b`, then to the built-in offline simulator. Every call is metered on the Activity page; a monthly budget breaker degrades to the simulator. | ₹0 |
+| Outbound email | Resend free tier (3,000/mo). **Delivery modes** in Settings: `SIMULATED` · `LIVE_REDIRECT` (real send to *your* inbox with the original recipient noted — works on the free tier without a verified domain) · `LIVE`. Approving a draft really dispatches it; failures show the provider's reason with Retry. | ₹0 |
+| WhatsApp | Self-hosted Evolution API (Baileys) in Docker — scan the QR on the WhatsApp Hub. Same delivery modes; anti-ban settings persist. | ₹0 |
+| "Talk to our AI" voice | **Free in-browser agent**: Web Speech API (or Groq Whisper `whisper-large-v3-turbo` for push-to-talk, or typing) → GPT-OSS on the versioned call script → browser TTS (optional Groq Orpheus). Books meetings, hands off, honours opt-outs in EN/HI/BN, records transcript + extraction. | ₹0 carrier |
+| Meetings | Free Jitsi Meet rooms (no account) + downloadable / emailed `.ics` invites + AI sales brief. | ₹0 |
+| Persistence mirror | Supabase stays optional/best-effort (migrations not applied → the panel tells you). | ₹0 |
+
+### Run it
+
+```bash
+npm install
+npm run dev            # http://localhost:3000 — DEMO_MODE=false + GROQ_API_KEY in .env.local = live model
+```
+
+- **Settings → Delivery mode** decides whether approvals leave the machine. On Resend's free tier pick
+  `LIVE_REDIRECT` and enter your own Resend account email — every approved message then really arrives in
+  your inbox, labelled with the intended prospect.
+- **Settings → Reset demo data** reseeds everything; `.data/` is git-ignored.
+- Admin API used by the UI: `GET /api/state`, `POST /api/leads` (+`/import` CSV), `POST /api/leads/[id]/{process,reply,meeting,brief}`,
+  `POST /api/messages/[id]/{approve,reject,send}`, `POST /api/outbox/flush`, `POST /api/campaigns` (+`/[id]/enroll`, `/[id]/run-step`),
+  `POST /api/conversations/[id]/{reply,ai-reply,send}`, `POST/PATCH /api/tasks`, `POST /api/meetings` (+`/[id]/ics`, `/[id]/invite`),
+  `GET/PUT /api/settings` (+`/kill-switch`, `/suppression`), `POST /api/voice/talk-links`, `POST /api/voice/dial`,
+  `POST /api/talk/[token]/{agent,transcribe,speak,events}`, `GET /api/integrations`.
+
+---
+
 ## 🚀 Key Architectural Pillars
 
 1. **Zero-Cost Out-of-the-Box Operation (`DEMO_MODE=true`)**:
    Runs completely locally without requiring external paid API keys or live third-party services. Features high-fidelity Indian B2B seed data (50+ companies across Bangalore, Mumbai, NCR, Pune, Hyderabad, Chennai, 100+ leads, campaigns, conversations, and meetings). When API keys (`GROQ_API_KEY`, `RESEND_API_KEY`, `WHATSAPP_ACCESS_TOKEN`) are added, integrations switch seamlessly to production mode.
 
 2. **Controlled 13-Agent SDR Operating System**:
-   Deterministic state machine and compliance guardrails wrapped around Groq LLM reasoning:
+   Deterministic state machine and compliance guardrails wrapped around Groq LLM reasoning (GPT-OSS-120B on the free tier, offline simulator fallback):
    - `Lead Intelligence Agent`
    - `Research Agent`
    - `ICP Qualification Agent`
@@ -98,14 +131,14 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```bash
 npm run lint
 npm run typecheck
-npm run test          # vitest unit/integration suite (tests/*.test.ts)
+npm run test          # vitest unit/integration suite (tests/*.test.ts) — 106 tests
 npm run build
 ```
 
 ### 5. Browser verification (Playwright)
 ```bash
 npx playwright install chromium   # once
-npm run test:e2e                  # starts the dev server on port 3100 in DEMO_MODE; mobile-375 + desktop projects
+npm run test:e2e                  # dev server on port 3100 in DEMO_MODE (APEX_PERSIST=false); voice + admin flows, mobile-375 + desktop
 npm run test:e2e:mobile           # only the 375px project (the voice module's acceptance criterion)
 npx playwright show-report
 ```
@@ -178,8 +211,11 @@ ai-sdr/
 │   ├── normalization/         # +91 Phone, GSTIN, Entity Type parsing
 │   ├── orchestrator/          # 13-Agent SDR Orchestrator State Machine + talk-invite dispatch
 │   ├── outreach/              # Campaign template rendering ({{first_name}}, {{talk_link}} …)
-│   ├── voice/                 # Providers (demo/Dograh), tokens, nonces, compliance gate, prompts
-│   ├── store/                 # Persistent In-Memory & Demo Store
+│   ├── voice/                 # Providers (demo/Dograh), free browser agent (agent.ts), tokens, nonces, compliance gate, prompts
+│   ├── store/                 # Server store + JSON persistence (.data/apex-store.json)
+│   ├── outreach/dispatch.ts   # Approve → real delivery (Resend / Evolution / simulator) with receipts
+│   ├── leads/                 # Lead validation, CSV import
+│   ├── client/                # useAppState() snapshot hook + fetch helpers for the admin UI
 │   └── types.ts               # Core TypeScript definitions
 │
 ├── supabase/                   # Supabase PostgreSQL Engine

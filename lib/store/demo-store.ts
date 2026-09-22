@@ -21,10 +21,57 @@ import {
   TalkCallNonce,
   VoiceCall,
   VoiceSettings,
+  WhatsAppAntiBanSettings,
+  DeliveryMode,
 } from '../types';
 import { normalizeIndianPhone, normalizeEmail, detectIndianEntityType } from '../normalization/india';
 import { INITIAL_CAMPAIGN_STEPS } from './campaign-steps';
-import { ComplianceGuard } from '../compliance/guard';
+import { ComplianceGuard, SuppressionEntry } from '../compliance/guard';
+import { readSnapshotFile, scheduleWrite, deleteSnapshotFile, flushWrite } from './persistence';
+
+/**
+ * Initial delivery mode: DEMO_MODE forces simulation; a configured test inbox/phone selects the
+ * safe redirect mode; otherwise messages go to the real recipients. Changeable in Settings.
+ */
+function defaultDeliveryMode(): DeliveryMode {
+  if (process.env.DEMO_MODE === 'true') return 'SIMULATED';
+  if (process.env.OUTBOUND_TEST_EMAIL || process.env.OUTBOUND_TEST_PHONE) return 'LIVE_REDIRECT';
+  return 'LIVE';
+}
+
+export const DEFAULT_WHATSAPP_ANTI_BAN: WhatsAppAntiBanSettings = {
+  minDelaySeconds: 15,
+  maxDelaySeconds: 42,
+  enableDynamicAiVariation: true,
+  dailyLimit: 50,
+  sentToday: 0,
+};
+
+/** Serialisable snapshot of the whole store (see lib/store/persistence.ts). */
+export interface StoreSnapshot {
+  org: Organization;
+  users: User[];
+  icp: ICPConfig;
+  companies: Company[];
+  leads: Lead[];
+  campaigns: Campaign[];
+  campaignSteps: CampaignStep[];
+  messages: OutboundMessage[];
+  conversations: Conversation[];
+  meetings: Meeting[];
+  tasks: Task[];
+  auditLogs: AuditLog[];
+  aiRuns: AIRun[];
+  talkSessions: TalkSession[];
+  talkCallNonces: TalkCallNonce[];
+  voiceCalls: VoiceCall[];
+  voiceSettings: VoiceSettings;
+  suppressionList: SuppressionEntry[];
+  whatsappAntiBan: WhatsAppAntiBanSettings;
+}
+
+const MAX_AUDIT_LOGS = 2000;
+const MAX_AI_RUNS = 2000;
 
 // Default Organization
 export const DEFAULT_ORG: Organization = {
@@ -44,6 +91,9 @@ export const DEFAULT_ORG: Organization = {
   ai_budget_spent_current_month: 28.45,
   is_autonomous_outreach_enabled: false,
   emergency_kill_switch_active: false,
+  delivery_mode: defaultDeliveryMode(),
+  outbound_test_email: process.env.OUTBOUND_TEST_EMAIL || undefined,
+  outbound_test_phone: process.env.OUTBOUND_TEST_PHONE || undefined,
   created_at: new Date('2024-01-15T00:00:00Z').toISOString(),
 };
 
@@ -348,11 +398,84 @@ class DemoStore {
     recording_enabled: true,
     human_booking_url: 'https://cal.com/apex-enterprise/discovery',
   };
+  public whatsappAntiBan: WhatsAppAntiBanSettings = { ...DEFAULT_WHATSAPP_ANTI_BAN };
+  /** True when the store was loaded from .data/apex-store.json rather than seeded. */
+  public loadedFromDisk = false;
 
   constructor() {
+    const saved = readSnapshotFile<StoreSnapshot>();
+    if (saved) {
+      this.hydrate(saved.data);
+      this.loadedFromDisk = true;
+      return;
+    }
+    this.org = { ...DEFAULT_ORG };
     this.leads = generateIndianLeads(this.companies);
     this.seedInitialOutboundAndConversations();
     this.seedInitialVoiceModule();
+    ComplianceGuard.resetToDefaults();
+    this.persist();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Persistence
+  // ---------------------------------------------------------------------------
+
+  public snapshot(): StoreSnapshot {
+    return {
+      org: this.org,
+      users: this.users,
+      icp: this.icp,
+      companies: this.companies,
+      leads: this.leads,
+      campaigns: this.campaigns,
+      campaignSteps: this.campaignSteps,
+      messages: this.messages,
+      conversations: this.conversations,
+      meetings: this.meetings,
+      tasks: this.tasks,
+      auditLogs: this.auditLogs,
+      aiRuns: this.aiRuns,
+      talkSessions: this.talkSessions,
+      talkCallNonces: this.talkCallNonces,
+      voiceCalls: this.voiceCalls,
+      voiceSettings: this.voiceSettings,
+      suppressionList: ComplianceGuard.getSuppressionList(),
+      whatsappAntiBan: this.whatsappAntiBan,
+    };
+  }
+
+  public hydrate(snap: StoreSnapshot): void {
+    this.org = { ...DEFAULT_ORG, ...snap.org };
+    this.users = snap.users?.length ? snap.users : [...INITIAL_USERS];
+    this.icp = { ...DEFAULT_ICP, ...snap.icp };
+    this.companies = snap.companies?.length ? snap.companies : generateIndianCompanies();
+    this.leads = snap.leads || [];
+    this.campaigns = snap.campaigns || [];
+    this.campaignSteps = snap.campaignSteps || [];
+    this.messages = snap.messages || [];
+    this.conversations = snap.conversations || [];
+    this.meetings = snap.meetings || [];
+    this.tasks = snap.tasks || [];
+    this.auditLogs = snap.auditLogs || [];
+    this.aiRuns = snap.aiRuns || [];
+    this.talkSessions = snap.talkSessions || [];
+    this.talkCallNonces = snap.talkCallNonces || [];
+    this.voiceCalls = snap.voiceCalls || [];
+    this.voiceSettings = { ...this.voiceSettings, ...snap.voiceSettings };
+    this.whatsappAntiBan = { ...DEFAULT_WHATSAPP_ANTI_BAN, ...snap.whatsappAntiBan };
+    ComplianceGuard.setSuppressionList(snap.suppressionList || []);
+    ComplianceGuard.setEmergencyKillSwitch(!!this.org.emergency_kill_switch_active);
+  }
+
+  /** Debounced write of the whole store to disk (no-op in tests / browser / APEX_PERSIST=false). */
+  public persist(): void {
+    scheduleWrite(() => this.snapshot());
+  }
+
+  /** Writes any pending snapshot immediately. */
+  public flush(): void {
+    flushWrite();
   }
 
   private seedInitialOutboundAndConversations() {
@@ -455,8 +578,8 @@ class DemoStore {
       description: 'Discovery session on cold-chain logistics lead qualification and multi-channel WhatsApp outreach.',
       start_time: new Date(Date.now() + 86400000 * 1.5).toISOString(),
       end_time: new Date(Date.now() + 86400000 * 1.5 + 1800000).toISOString(),
-      meet_url: 'https://meet.google.com/apx-sdr-qck',
-      calendar_provider: 'Google Calendar [SIMULATED]',
+      meet_url: 'https://meet.jit.si/ApexSDR-quicklogix-discovery-seed01',
+      calendar_provider: 'Jitsi Meet (free, no account)',
       status: 'CONFIRMED',
       sales_brief: {
         account_overview: 'QuickLogix is a ₹180Cr revenue 3PL cold-chain logistics enterprise headquartered in Gurugram, Haryana.',
@@ -953,8 +1076,9 @@ class DemoStore {
 
   // Lead Management
   public addLead(leadData: Partial<Lead>): Lead {
-    const rawPhone = leadData.phone || '+919800000000';
-    const normPhone = normalizeIndianPhone(rawPhone);
+    // No phone means no phone — never substitute a placeholder number (the old default sat on the suppression list).
+    const rawPhone = leadData.phone || '';
+    const normPhone = rawPhone ? normalizeIndianPhone(rawPhone) : { normalized: '', isValid: false };
     const normEmail = normalizeEmail(leadData.email || '');
 
     const newLead: Lead = {
@@ -967,17 +1091,19 @@ class DemoStore {
       job_title: leadData.job_title || 'Decision Maker',
       email: leadData.email || '',
       normalized_email: normEmail.normalized,
-      phone: rawPhone,
-      normalized_phone: normPhone.normalized,
+      phone: normPhone.isValid ? normPhone.normalized : rawPhone,
+      normalized_phone: normPhone.isValid ? normPhone.normalized : '',
       city: leadData.city || 'Bengaluru',
       state: leadData.state || 'Karnataka',
       status: 'NEW',
       lead_source: leadData.lead_source || 'MANUAL_ENTRY',
       preferred_language: leadData.preferred_language || 'en',
-      assigned_user_id: INITIAL_USERS[2].id,
+      assigned_user_id: leadData.assigned_user_id || INITIAL_USERS[2].id,
       is_suppressed: false,
       is_dnc_registered: false,
       requires_human_attention: false,
+      industry: leadData.industry,
+      notes: leadData.notes,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       score: {
@@ -1063,6 +1189,113 @@ class DemoStore {
     return msg;
   }
 
+  // ---------------------------------------------------------------------------
+  // Generic CRUD used by the API routes
+  // ---------------------------------------------------------------------------
+
+  public findLead(id: string): Lead | undefined {
+    return this.leads.find((l) => l.id === id);
+  }
+
+  public updateLead(id: string, patch: Partial<Lead>): Lead | undefined {
+    const lead = this.findLead(id);
+    if (!lead) return undefined;
+    Object.assign(lead, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    lead.updated_at = new Date().toISOString();
+    return lead;
+  }
+
+  public addTask(task: Partial<Task>): Task {
+    const full: Task = {
+      id: task.id || `task_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: this.org.id,
+      lead_id: task.lead_id,
+      lead_name: task.lead_name || (task.lead_id ? this.findLead(task.lead_id)?.full_name : undefined),
+      assigned_user_id: task.assigned_user_id,
+      assigned_user_name: task.assigned_user_name || (task.assigned_user_id ? this.users.find((u) => u.id === task.assigned_user_id)?.full_name : undefined),
+      title: task.title || 'Follow up',
+      description: task.description,
+      priority: task.priority || 'MEDIUM',
+      due_date: task.due_date,
+      status: task.status || 'PENDING',
+      created_by_ai: task.created_by_ai ?? false,
+      completed_at: task.completed_at,
+      created_at: task.created_at || new Date().toISOString(),
+    };
+    this.tasks.unshift(full);
+    return full;
+  }
+
+  public updateTask(id: string, patch: Partial<Task>): Task | undefined {
+    const task = this.tasks.find((t) => t.id === id);
+    if (!task) return undefined;
+    Object.assign(task, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    if (patch.status === 'COMPLETED' && !task.completed_at) task.completed_at = new Date().toISOString();
+    if (patch.status && patch.status !== 'COMPLETED') task.completed_at = undefined;
+    return task;
+  }
+
+  public addMeeting(meeting: Partial<Meeting>): Meeting {
+    const start = meeting.start_time || new Date(Date.now() + 86400000).toISOString();
+    const full: Meeting = {
+      id: meeting.id || `meet_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: this.org.id,
+      lead_id: meeting.lead_id || this.leads[0]?.id || '',
+      lead_name: meeting.lead_name || (meeting.lead_id ? this.findLead(meeting.lead_id)?.full_name : undefined) || 'Prospect',
+      lead_company: meeting.lead_company || (meeting.lead_id ? this.findLead(meeting.lead_id)?.company_name : undefined) || '',
+      host_user_id: meeting.host_user_id,
+      host_user_name: meeting.host_user_name,
+      title: meeting.title || 'Discovery call',
+      description: meeting.description,
+      start_time: start,
+      end_time: meeting.end_time || new Date(new Date(start).getTime() + 30 * 60000).toISOString(),
+      meet_url: meeting.meet_url || '',
+      calendar_provider: meeting.calendar_provider || 'Jitsi Meet (free, no account)',
+      status: meeting.status || 'CONFIRMED',
+      sales_brief: meeting.sales_brief,
+      talk_session_id: meeting.talk_session_id,
+      invite_sent_at: meeting.invite_sent_at,
+      created_at: meeting.created_at || new Date().toISOString(),
+    };
+    this.meetings.unshift(full);
+    return full;
+  }
+
+  public updateMeeting(id: string, patch: Partial<Meeting>): Meeting | undefined {
+    const meeting = this.meetings.find((m) => m.id === id);
+    if (!meeting) return undefined;
+    Object.assign(meeting, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    return meeting;
+  }
+
+  public addCampaign(campaign: Campaign, steps: CampaignStep[]): Campaign {
+    this.campaigns.push(campaign);
+    this.campaignSteps.push(...steps);
+    return campaign;
+  }
+
+  public recordAIRun(run: Omit<AIRun, 'id' | 'organization_id' | 'created_at'>): AIRun {
+    const full: AIRun = {
+      id: `airun_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      organization_id: this.org.id,
+      created_at: new Date().toISOString(),
+      ...run,
+    };
+    this.aiRuns.unshift(full);
+    if (this.aiRuns.length > MAX_AI_RUNS) this.aiRuns.length = MAX_AI_RUNS;
+    this.org.ai_budget_spent_current_month = Math.round((this.org.ai_budget_spent_current_month + (run.estimated_cost_usd || 0)) * 1e6) / 1e6;
+    this.persist();
+    return full;
+  }
+
+  public setKillSwitch(active: boolean): boolean {
+    if (this.org.emergency_kill_switch_active === active) {
+      ComplianceGuard.setEmergencyKillSwitch(active);
+      return active;
+    }
+    return this.toggleKillSwitch();
+  }
+
   public toggleKillSwitch(): boolean {
     this.org.emergency_kill_switch_active = !this.org.emergency_kill_switch_active;
     // Keep the ComplianceGuard's static flag in step so every outbound gate sees the switch.
@@ -1097,10 +1330,19 @@ class DemoStore {
       details,
       created_at: new Date().toISOString(),
     });
+    if (this.auditLogs.length > MAX_AUDIT_LOGS) this.auditLogs.length = MAX_AUDIT_LOGS;
+    this.persist();
   }
 
   public getStats() {
     const totalLeads = this.leads.length;
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const leadsToday = this.leads.filter((l) => new Date(l.created_at).getTime() >= dayStart.getTime()).length;
+    const sentMessages = this.messages.filter((m) => ['SENT', 'DELIVERED', 'OPENED', 'CLICKED', 'REPLIED'].includes(m.status)).length;
+    const repliedMessages = this.messages.filter((m) => m.status === 'REPLIED').length;
+    const aiTokensTotal = this.aiRuns.reduce((acc, r) => acc + (r.total_tokens || 0), 0);
+    const aiAvgLatencyMs = this.aiRuns.length > 0 ? Math.round(this.aiRuns.reduce((acc, r) => acc + (r.latency_ms || 0), 0) / this.aiRuns.length) : 0;
     const qualifiedLeads = this.leads.filter((l) => ['QUALIFIED', 'OUTREACH', 'CONTACTED', 'ENGAGED', 'QUALIFIED_OPPORTUNITY', 'MEETING', 'SALES_HANDOFF', 'WON'].includes(l.status)).length;
     const contacted = this.leads.filter((l) => ['CONTACTED', 'ENGAGED', 'QUALIFIED_OPPORTUNITY', 'MEETING', 'SALES_HANDOFF', 'WON'].includes(l.status)).length;
     const engaged = this.leads.filter((l) => ['ENGAGED', 'QUALIFIED_OPPORTUNITY', 'MEETING', 'SALES_HANDOFF', 'WON'].includes(l.status)).length;
@@ -1120,13 +1362,27 @@ class DemoStore {
       opportunities,
       handoffs,
       pendingApprovals,
+      queuedMessages: this.messages.filter((m) => m.status === 'QUEUED').length,
+      failedMessages: this.messages.filter((m) => m.status === 'FAILED').length,
+      sentMessages,
+      repliedMessages,
+      pendingTasks: this.tasks.filter((t) => t.status === 'PENDING' || t.status === 'IN_PROGRESS').length,
+      activeCampaigns: this.campaigns.filter((c) => c.status === 'ACTIVE').length,
+      suppressedLeads: this.leads.filter((l) => l.is_suppressed).length,
+      leadsToday,
       conversionRate,
+      replyRate: sentMessages > 0 ? ((repliedMessages / sentMessages) * 100).toFixed(1) : '0.0',
       aiSpendCurrentMonth: this.org.ai_budget_spent_current_month,
       aiBudgetTotal: this.org.monthly_ai_budget,
+      aiRunsCount: this.aiRuns.length,
+      aiTokensTotal,
+      aiAvgLatencyMs,
       killSwitchActive: this.org.emergency_kill_switch_active,
     };
   }
 }
+
+export type { DemoStore };
 
 // Global Singleton for Demo Store
 declare global {
@@ -1137,5 +1393,14 @@ export function getDemoStore(): DemoStore {
   if (!global.__demoStoreInstance) {
     global.__demoStoreInstance = new DemoStore();
   }
+  return global.__demoStoreInstance;
+}
+
+/** Discards the persisted snapshot and rebuilds the seed data ("Reset demo data" in Settings). */
+export function resetDemoStore(): DemoStore {
+  deleteSnapshotFile();
+  ComplianceGuard.resetToDefaults();
+  global.__demoStoreInstance = new DemoStore();
+  global.__demoStoreInstance.recordAuditLog('USER', 'DEMO_DATA_RESET', 'organization', DEFAULT_ORG.id, 'Store reset to seed data');
   return global.__demoStoreInstance;
 }

@@ -38,6 +38,8 @@ export default defineConfig({
       VOICE_PROVIDER: 'demo',
       NEXT_PUBLIC_VOICE_PROVIDER: 'demo',
       NEXT_PUBLIC_APP_URL: BASE_URL,
+      // Every e2e run starts from seed data; nothing is written to .data/.
+      APEX_PERSIST: 'false',
     },
   },
   projects: [
