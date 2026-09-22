@@ -197,6 +197,15 @@ interface DograhWidgetAPI {
 }
 ```
 
+### Receiver behaviour (`app/api/voice/webhooks/dograh/route.ts`)
+1. Reads the raw body, verifies `X-Webhook-Secret` via `provider.verifyWebhookSignature()` (plain secret match or hex HMAC-SHA256 of the raw body) → `401` on mismatch.
+2. Validates the JSON against `DograhWebhookPayloadSchema` → `400` with Zod issues on failure.
+3. Calls `provider.processWebhook()`, which resolves the lead from `initial_context.talk_ref` (talk nonce), records or **updates** the `voice_calls` row keyed by `provider_run_id` (idempotent — redeliveries never create a second row or re-run lead actions), then applies opt-out suppression, meeting booking and sales handoff.
+
+```json
+{ "success": true, "provider": "dograh", "duplicate": false, "call_id": "vc_dograh_98765", "status": "COMPLETED", "lead_id": "lead_…", "extracted": { "...": "gathered_context" } }
+```
+
 ---
 
 ## 5. Dograh HTTP Tool Endpoints (Agent In-Call Tool Calls)

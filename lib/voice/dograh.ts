@@ -6,6 +6,7 @@ import { getSupabaseClient } from '../supabase';
 import { checkPstnOutboundCompliance } from './compliance';
 import { ComplianceGuard } from '../compliance/guard';
 import { peekTalkNonce } from './talk-links';
+import { VoiceCall } from '../types';
 
 export class DograhVoiceProvider implements VoiceProvider {
   public name = 'dograh';
@@ -169,8 +170,10 @@ export class DograhVoiceProvider implements VoiceProvider {
     const supabase = getSupabaseClient();
     const gathered = payload.gathered_context || {};
     const talkRef = payload.initial_context?.talk_ref;
+    const runId = String(payload.workflow_run_id);
 
-    let leadId = demoStore.getLeads()[0].id;
+    // 1. Resolve the talk session / lead from the nonce (WebRTC calls carry talk_ref).
+    let leadId: string | undefined;
     let sessionId: string | undefined;
 
     if (talkRef) {
@@ -181,30 +184,60 @@ export class DograhVoiceProvider implements VoiceProvider {
       }
     }
 
-    const lead = demoStore.getLeads().find((l) => l.id === leadId) || demoStore.getLeads()[0];
+    // 2. Idempotency: a PSTN call already has an INITIATED row from initiateOutboundCall(),
+    //    and Dograh may redeliver a webhook. Update the existing row instead of adding another.
+    const existing = demoStore.getVoiceCalls().find((c) => c.provider_run_id === runId);
+    const duplicate = existing?.status === 'COMPLETED';
 
-    const callRecord = demoStore.recordVoiceCall({
-      id: `vc_${payload.workflow_run_id}`,
-      organization_id: demoStore.getOrg().id,
-      lead_id: lead.id,
-      lead_name: lead.full_name,
-      lead_company: lead.company_name,
-      talk_session_id: sessionId,
-      mode: talkRef ? 'webrtc' : 'pstn',
-      provider: 'dograh',
-      provider_run_id: String(payload.workflow_run_id),
-      status: 'COMPLETED',
-      started_at: payload.call_time || new Date().toISOString(),
-      ended_at: new Date().toISOString(),
-      duration_seconds: payload.cost_info?.call_duration_seconds || 180,
-      extracted: gathered,
-      intent: gathered.intent || 'INTERESTED',
-      sentiment: (gathered.sentiment as any) || 'POSITIVE',
-      disclosure_given: true,
-      consent_transcript: true,
-      recording_url: payload.recording_url,
-      carrier_cost_estimate_inr: talkRef ? 0.0 : 1.25,
-    });
+    if (existing && !leadId) {
+      leadId = existing.lead_id;
+    }
+
+    const lead =
+      demoStore.getLeads().find((l) => l.id === leadId) || demoStore.getLeads()[0];
+
+    const endedAt = new Date().toISOString();
+    let callRecord: VoiceCall;
+
+    if (existing) {
+      existing.status = 'COMPLETED';
+      existing.ended_at = existing.ended_at && duplicate ? existing.ended_at : endedAt;
+      existing.duration_seconds =
+        payload.cost_info?.call_duration_seconds ?? existing.duration_seconds ?? 0;
+      existing.extracted = gathered;
+      existing.intent = gathered.intent || existing.intent;
+      existing.sentiment = (gathered.sentiment as any) || existing.sentiment;
+      existing.talk_session_id = existing.talk_session_id || sessionId;
+      existing.lead_id = lead.id;
+      existing.lead_name = lead.full_name;
+      existing.lead_company = lead.company_name;
+      if (payload.recording_url) existing.recording_url = payload.recording_url;
+      callRecord = existing;
+    } else {
+      callRecord = demoStore.recordVoiceCall({
+        id: `vc_dograh_${runId}`,
+        organization_id: demoStore.getOrg().id,
+        lead_id: lead.id,
+        lead_name: lead.full_name,
+        lead_company: lead.company_name,
+        talk_session_id: sessionId,
+        mode: talkRef ? 'webrtc' : 'pstn',
+        provider: 'dograh',
+        provider_run_id: runId,
+        status: 'COMPLETED',
+        started_at: payload.call_time || endedAt,
+        ended_at: endedAt,
+        duration_seconds: payload.cost_info?.call_duration_seconds ?? 0,
+        extracted: gathered,
+        intent: gathered.intent || 'INTERESTED',
+        sentiment: (gathered.sentiment as any) || 'POSITIVE',
+        disclosure_given: true,
+        consent_transcript: true,
+        recording_url: payload.recording_url,
+        // WebRTC is carrier-free; PSTN via Vobiz carries an estimated per-call cost.
+        carrier_cost_estimate_inr: talkRef ? 0.0 : 1.25,
+      });
+    }
 
     if (supabase) {
       try {
@@ -231,28 +264,52 @@ export class DograhVoiceProvider implements VoiceProvider {
       }
     }
 
-    // Lead workflow actions
-    if (gathered.opt_out) {
-      ComplianceGuard.addSuppression({
-        email: lead.email,
-        phone: lead.phone,
-        reason: 'DO_NOT_CONTACT',
-      });
-      lead.is_suppressed = true;
-      lead.suppression_reason = 'Opted out via Dograh voice call';
-    }
+    // 3. Post-call lead actions — skipped on duplicate delivery so audit history stays clean.
+    if (!duplicate) {
+      if (gathered.opt_out) {
+        ComplianceGuard.addSuppression({
+          email: lead.email,
+          phone: lead.phone,
+          reason: 'DO_NOT_CONTACT',
+        });
+        lead.is_suppressed = true;
+        lead.suppression_reason = 'Opted out via Dograh voice call';
+        demoStore.recordAuditLog(
+          'SYSTEM_WORKER',
+          'LEAD_SUPPRESSED_FROM_VOICE',
+          'lead',
+          lead.id,
+          `Suppressed prospect ${lead.full_name} following voice opt-out (Dograh run ${runId}).`
+        );
+      }
 
-    if (gathered.meeting_requested) {
-      lead.status = 'MEETING';
-    } else if (gathered.handoff_requested) {
-      lead.status = 'SALES_HANDOFF';
-      lead.requires_human_attention = true;
+      if (gathered.meeting_requested) {
+        lead.status = 'MEETING';
+        demoStore.recordAuditLog(
+          'AI_AGENT',
+          'VOICE_MEETING_SCHEDULED',
+          'meeting',
+          gathered.meeting_id || callRecord.id,
+          `Voice agent booked a meeting for ${lead.full_name} (Dograh run ${runId}).`
+        );
+      } else if (gathered.handoff_requested) {
+        lead.status = 'SALES_HANDOFF';
+        lead.requires_human_attention = true;
+        demoStore.recordAuditLog(
+          'AI_AGENT',
+          'VOICE_SDR_HANDOFF_TRIGGERED',
+          'lead',
+          lead.id,
+          `SDR human handoff requested during voice call: ${gathered.summary || 'Immediate follow-up needed'}`
+        );
+      }
     }
 
     return {
       success: true,
       callRecord,
       extracted: gathered,
+      duplicate,
     };
   }
 }

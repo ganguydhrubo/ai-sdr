@@ -3,7 +3,7 @@ import { DograhWebhookPayload } from './schemas';
 import { getDemoStore } from '../store/demo-store';
 import { checkPstnOutboundCompliance } from './compliance';
 import { ComplianceGuard } from '../compliance/guard';
-import { VoiceCall } from '../types';
+import { peekTalkNonce } from './talk-links';
 
 export class DemoVoiceProvider implements VoiceProvider {
   public name = 'demo';
@@ -83,28 +83,41 @@ export class DemoVoiceProvider implements VoiceProvider {
     const demoStore = getDemoStore();
     const gathered = payload.gathered_context || {};
     const talkRef = payload.initial_context?.talk_ref;
+    const runId = String(payload.workflow_run_id);
 
-    // Resolve associated call or create a completed record
+    // Resolve the lead from the talk nonce when the call came through a talk link.
+    let leadId: string | undefined;
+    let sessionId: string | undefined;
+    if (talkRef) {
+      const nonceCheck = await peekTalkNonce(talkRef);
+      if (nonceCheck.valid && nonceCheck.nonceRecord) {
+        leadId = nonceCheck.nonceRecord.lead_id;
+        sessionId = nonceCheck.nonceRecord.talk_session_id;
+      }
+    }
+
+    // Idempotency: update the existing record for this provider run instead of creating a second one.
     let callRecord = demoStore
       .getVoiceCalls()
-      .find(
-        (c) =>
-          c.provider_run_id === String(payload.workflow_run_id) ||
-          (talkRef && c.talk_session_id?.includes(talkRef))
-      );
+      .find((c) => c.provider_run_id === runId || (!!sessionId && c.talk_session_id === sessionId && c.status !== 'COMPLETED'));
+    const duplicate = callRecord?.status === 'COMPLETED';
 
-    const lead = demoStore.getLeads()[0];
+    if (callRecord && !leadId) {
+      leadId = callRecord.lead_id;
+    }
+    const lead = demoStore.getLeads().find((l) => l.id === leadId) || demoStore.getLeads()[0];
 
     if (!callRecord) {
       callRecord = demoStore.recordVoiceCall({
-        id: `vc_${payload.workflow_run_id}`,
+        id: `vc_${runId}`,
         organization_id: demoStore.getOrg().id,
         lead_id: lead.id,
         lead_name: lead.full_name,
         lead_company: lead.company_name,
-        mode: payload.initial_context?.talk_ref ? 'webrtc' : 'pstn',
+        talk_session_id: sessionId,
+        mode: talkRef ? 'webrtc' : 'pstn',
         provider: 'demo',
-        provider_run_id: String(payload.workflow_run_id),
+        provider_run_id: runId,
         status: 'COMPLETED',
         started_at: payload.call_time || new Date().toISOString(),
         ended_at: new Date().toISOString(),
@@ -119,16 +132,21 @@ export class DemoVoiceProvider implements VoiceProvider {
         disclosure_given: true,
         consent_transcript: true,
         recording_url: payload.recording_url || 'https://demo-storage.apextech.in/recordings/demo_call.mp3',
-        carrier_cost_estimate_inr: 0.0,
+        carrier_cost_estimate_inr: talkRef ? 0.0 : 0.85,
       });
-    } else {
+    } else if (!duplicate) {
       callRecord.status = 'COMPLETED';
       callRecord.ended_at = new Date().toISOString();
       callRecord.duration_seconds = payload.cost_info?.call_duration_seconds || callRecord.duration_seconds || 120;
       callRecord.extracted = gathered;
       callRecord.intent = gathered.intent || callRecord.intent;
       callRecord.sentiment = (gathered.sentiment as any) || callRecord.sentiment;
+      callRecord.talk_session_id = callRecord.talk_session_id || sessionId;
       if (payload.recording_url) callRecord.recording_url = payload.recording_url;
+    }
+
+    if (duplicate) {
+      return { success: true, callRecord, extracted: callRecord.extracted, duplicate: true };
     }
 
     // Handle SDR post-call actions:
@@ -179,6 +197,7 @@ export class DemoVoiceProvider implements VoiceProvider {
       success: true,
       callRecord,
       extracted: gathered,
+      duplicate: false,
     };
   }
 }

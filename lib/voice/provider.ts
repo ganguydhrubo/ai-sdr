@@ -22,6 +22,8 @@ export interface VoiceWebhookProcessResult {
   callRecord?: VoiceCall;
   extracted?: any;
   error?: string;
+  /** True when the same provider run was already recorded as COMPLETED (duplicate delivery). */
+  duplicate?: boolean;
 }
 
 export interface VoiceProvider {
